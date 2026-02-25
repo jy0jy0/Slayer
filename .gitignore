@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# 가상환경
+.venv/
+venv/
+env/
+
+# 데이터 (크롤링 결과)
+parsed_jd/
+raw/
+
+# 메모/작업 노트
+memo/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+.DS_Store
+
+# 테스트 임시 파일
+test_*.py
+*.md.bak
+
+# 환경변수
+.env
+.env.local

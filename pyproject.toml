@@ -1,0 +1,15 @@
+[project]
+name = "slayer"
+version = "0.1.0"
+description = "Multi-platform Job Description Scraper"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.3.1",
+    "crawl4ai>=0.8.0",
+    "google-genai>=1.64.0",
+    "httpx>=0.28.0",
+]
+
+[project.scripts]
+slayer = "slayer.cli:main"
