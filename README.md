@@ -4,17 +4,33 @@
 채용 공고 URL을 입력하면, AI(Gemini)를 통해 **정형화된 JSON**으로 추출해주는 파이프라인입니다.
 현재 **잡코리아(JobKorea)**를 주력으로 지원하며, 텍스트와 이미지가 혼합된 공고도 처리 가능합니다.
 
+## 설치
+
+```powershell
+# 의존성 설치
+uv sync
+
+# crawl4ai가 사용하는 브라우저 설치 (최초 1회 필요)
+uv run playwright install
+```
+
 ## 빠른 시작
 
 ```powershell
 # 기본 사용 (JSON 출력 + parsed_jd/ 자동 저장)
-python -m slayer "https://www.jobkorea.co.kr/Recruit/GI_Read/48589768?Oem_Code=C1"
+uv run python -m slayer "URL"
 
 # raw 데이터도 함께 저장 (원문 Markdown + 이미지)
-python -m slayer "https://www.jobkorea.co.kr/Recruit/GI_Read/48589768?Oem_Code=C1" --save-raw
+uv run python -m slayer "URL" --save-raw
 
-# 파일로 저장
-python -m slayer "URL" -o output.json
+# 파일로 저장 (터미널 출력 없이 파일에만 저장)
+uv run python -m slayer "URL" -o output.json
+
+# raw 데이터 저장 + 파일 출력 (터미널 출력 없이 모두 저장)
+uv run python -m slayer "URL" --save-raw -o output.json
+
+# 한 공고에 여러 직무가 있을 때 특정 직무만 추출
+uv run python -m slayer "URL" --job-title "AI서비스개발"
 ```
 
 ---
@@ -26,6 +42,7 @@ python -m slayer "URL" -o output.json
 | `URL`            | 필수      | -       | 지원 플랫폼(잡코리아 등) 채용 공고 URL              |
 | `--save-raw`     | 플래그    | `False` | crawl4ai raw markdown + 원본 이미지를 `raw/`에 저장 |
 | `-o`, `--output` | 파일 경로 | `None`  | JSON 결과를 파일에 저장 (미지정 시 stdout 출력)     |
+| `--job-title`    | 문자열    | `None`  | 한 공고에 여러 직무가 있을 때 특정 직무만 필터링     |
 
 ---
 
@@ -141,6 +158,7 @@ Slayer는 별도의 설정 없이도 공고 본문에 이미지가 포함되어 
 {
   "company": "회사명",
   "title": "공고 제목",
+  "position": "모집부문 / 직무명",
   "overview": {
     "employment_type": "정규직",
     "experience": "경력(2년이상)",

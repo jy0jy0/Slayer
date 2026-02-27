@@ -82,7 +82,7 @@ def _build_run_config(cfg: CrawlConfig) -> CrawlerRunConfig:
     return CrawlerRunConfig(**kwargs)
 
 
-async def _scrape(url: str, save_raw: bool = False) -> dict:
+async def _scrape(url: str, save_raw: bool = False, job_title: str | None = None) -> dict:
     """Fetch *url* with crawl4ai and return parsed JD dict."""
     parser = get_parser(url)
     logger.info("Using parser: %s for %s", type(parser).__name__, url)
@@ -111,7 +111,7 @@ async def _scrape(url: str, save_raw: bool = False) -> dict:
             _save_raw_markdown(url, md_text)
 
         # 파싱 (dict 반환)
-        parsed = parser.parse(raw_html, crawl_md, url, save_raw=save_raw)
+        parsed = parser.parse(raw_html, crawl_md, url, save_raw=save_raw, job_title=job_title)
 
         # parsed_jd/ 에 JSON 저장
         if isinstance(parsed, dict):
@@ -120,11 +120,11 @@ async def _scrape(url: str, save_raw: bool = False) -> dict:
         return parsed
 
 
-def scrape_jd(url: str, save_raw: bool = False) -> dict:
+def scrape_jd(url: str, save_raw: bool = False, job_title: str | None = None) -> dict:
     """Synchronous entry point — scrapes a single JD URL and returns dict."""
-    return asyncio.run(_scrape(url, save_raw=save_raw))
+    return asyncio.run(_scrape(url, save_raw=save_raw, job_title=job_title))
 
 
-async def scrape_jd_async(url: str, save_raw: bool = False) -> dict:
+async def scrape_jd_async(url: str, save_raw: bool = False, job_title: str | None = None) -> dict:
     """Async entry point — scrapes a single JD URL and returns dict."""
-    return await _scrape(url, save_raw=save_raw)
+    return await _scrape(url, save_raw=save_raw, job_title=job_title)

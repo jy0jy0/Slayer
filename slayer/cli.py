@@ -26,10 +26,18 @@ from slayer.scraper import scrape_jd
     default=False,
     help="Save raw crawl4ai markdown and images to raw/ directory.",
 )
-def main(url: str, output: str | None, save_raw: bool) -> None:
+@click.option(
+    "--job-title",
+    default=None,
+    help="Filter by specific job title when a page contains multiple positions.",
+)
+def main(url: str, output: str | None, save_raw: bool, job_title: str | None) -> None:
     """Scrape a job description from URL and output as JSON."""
     try:
-        jd_data = scrape_jd(url, save_raw=save_raw)
+        from dotenv import load_dotenv
+        load_dotenv()
+
+        jd_data = scrape_jd(url, save_raw=save_raw, job_title=job_title)
     except Exception as exc:
         click.secho(f"Error: {exc}", fg="red", err=True)
         sys.exit(1)

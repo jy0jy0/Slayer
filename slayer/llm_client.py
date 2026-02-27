@@ -13,11 +13,6 @@ logger = logging.getLogger(__name__)
 
 # ── 설정 ──────────────────────────────────────────────────
 
-# API 키: 환경변수 GEMINI_API_KEY 또는 직접 입력
-_API_KEY = os.environ.get(
-    "GEMINI_API_KEY",
-    "AIzaSyDjrehXeh06OPVNqmwKeG6F1JH2Ji4z3oM",  # 기본값 (테스트용)
-)
 _MODEL = "gemini-2.5-flash"
 
 # ── JD JSON 스키마 ────────────────────────────────────────
@@ -32,6 +27,10 @@ JD_SCHEMA = {
         "title": {
             "type": "string",
             "description": "공고 제목",
+        },
+        "position": {
+            "type": "string",
+            "description": "모집부문 / 직무명 (예: AI서비스개발, Machine Learning Engineer)",
         },
         "overview": {
             "type": "object",
@@ -113,17 +112,31 @@ JD_EXTRACT_PROMPT = """\
 5. 해당 정보가 원문에 없으면 해당 필드는 비워두세요.
 6. 이미지 안의 텍스트도 **그대로** 읽어서 적절한 필드에 배치하세요.
 7. 텍스트와 이미지 모두에 같은 정보가 있으면 중복 없이 하나만 포함하세요.
-
+{job_title_instruction}
 ## 입력 텍스트
 {crawl_markdown}
+"""
+
+_JOB_TITLE_INSTRUCTION = """
+## 직무 필터
+이 페이지에 여러 모집부문이 있습니다.
+**"{job_title}"** 모집부문에 해당하는 내용만 추출하세요.
+다른 모집부문의 업무, 자격요건, 우대사항 등은 모두 제외하세요.
+공통사항(전형방법, 접수기간 등)은 포함하세요.
 """
 
 
 # ── 클라이언트 ────────────────────────────────────────────
 
 def _get_client() -> genai.Client:
-    """Gemini 클라이언트 싱글톤."""
-    return genai.Client(api_key=_API_KEY)
+    """Gemini 클라이언트 생성. 호출 시점에 API 키를 검증."""
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "GEMINI_API_KEY 환경 변수가 설정되지 않았습니다. "
+            ".env 파일이나 시스템 환경 변수를 확인하세요."
+        )
+    return genai.Client(api_key=api_key)
 
 
 def verify_extraction(original: str, extracted: dict) -> list[str]:
@@ -179,6 +192,7 @@ def extract_jd(
     crawl_markdown: str,
     image_urls: list[str] | None = None,
     save_dir: str | None = None,
+    job_title: str | None = None,
 ) -> dict:
     """crawl4ai Markdown(및 이미지)에서 JD 내용을 JSON으로 추출.
 
@@ -188,12 +202,22 @@ def extract_jd(
         crawl_markdown: crawl4ai가 변환한 전체 페이지 Markdown.
         image_urls: JD 본문 이미지 URL 리스트 (None이면 텍스트만 처리).
         save_dir: 이미지를 저장할 디렉토리 경로 (None이면 저장 안 함).
+        job_title: 특정 직무만 필터링할 직무명 (None이면 전체 추출).
 
     Returns:
         정형화된 JD dict.
     """
     client = _get_client()
-    prompt = JD_EXTRACT_PROMPT.format(crawl_markdown=crawl_markdown)
+
+    job_title_instruction = ""
+    if job_title:
+        job_title_instruction = _JOB_TITLE_INSTRUCTION.format(job_title=job_title)
+        logger.info("직무 필터 적용: %s", job_title)
+
+    prompt = JD_EXTRACT_PROMPT.format(
+        crawl_markdown=crawl_markdown,
+        job_title_instruction=job_title_instruction,
+    )
 
     # 콘텐츠 구성: 텍스트 + 이미지 (multimodal)
     contents: list = [prompt]

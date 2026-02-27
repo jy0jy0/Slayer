@@ -61,8 +61,9 @@ class JobKoreaParser(BaseParser):
         )
 
     def parse(self, raw_html: str, crawl_markdown: str, url: str, **kwargs) -> dict:
-        save_raw = kwargs.get("save_raw", False)
         """JD를 정형화된 dict로 반환."""
+        save_raw = kwargs.get("save_raw", False)
+        job_title = kwargs.get("job_title")
         if not crawl_markdown or len(crawl_markdown.strip()) < 100:
             logger.warning("crawl4ai Markdown이 너무 짧습니다: %d자", len(crawl_markdown))
             return {"company": "", "title": "", "notes": crawl_markdown}
@@ -97,6 +98,7 @@ class JobKoreaParser(BaseParser):
                 md_text,
                 image_urls=jd_image_urls or None,
                 save_dir=img_save_dir,
+                job_title=job_title,
             )
 
             # Hallucination 체크 (이미지 JD가 없을 때만 진행)
