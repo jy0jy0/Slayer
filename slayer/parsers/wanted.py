@@ -1,18 +1,22 @@
-"""Wanted (wanted.co.kr) parser.
+"""Wanted (wanted.co.kr) parser — LLM 기반 텍스트 JD 추출.
 
-Wanted uses a React SPA with a "상세 정보 더 보기" button that must be
-clicked to reveal the full job description.
+crawl4ai가 생성한 Markdown을 Gemini LLM으로 정제하여
+채용 공고 내용을 정형화된 JSON으로 추출합니다.
+
+Wanted는 모든 JD가 텍스트 기반이므로 이미지 처리 없이 텍스트만 추출합니다.
 """
 
 from __future__ import annotations
 
+import logging
+
 from slayer.parser_base import BaseParser, CrawlConfig
+
+logger = logging.getLogger(__name__)
 
 
 class WantedParser(BaseParser):
-    """[개발 중] 원티드(wanted.co.kr) 채용 공고 파서.
-    TODO: Gemini LLM 연동을 통한 정형화된 JSON 출력 기능 추가 예정.
-    """
+    """원티드(wanted.co.kr) 채용 공고 파서."""
 
     def can_handle(self, url: str) -> bool:
         return "wanted.co.kr" in url
@@ -33,6 +37,22 @@ class WantedParser(BaseParser):
                     }
                 }
                 """,
+                # 헤더의 경력/지역 메타 정보를 본문에 삽입 (crawl4ai가 캡처할 수 있도록)
+                """
+                const infoSpans = document.querySelectorAll('span[class*="JobHeader_JobHeader__Tools__Company__Info"]');
+                if (infoSpans.length > 0) {
+                    const metaDiv = document.createElement('div');
+                    metaDiv.id = 'slayer-meta-info';
+                    const parts = [];
+                    infoSpans.forEach(span => {
+                        const text = span.textContent.trim();
+                        if (text && text !== '·') parts.push(text);
+                    });
+                    metaDiv.textContent = '채용 메타 정보: ' + parts.join(' | ');
+                    const article = document.querySelector('section, article, main');
+                    if (article) article.prepend(metaDiv);
+                }
+                """,
                 # Wait for the expanded content to render
                 "await new Promise(r => setTimeout(r, 2000));",
             ],
@@ -40,47 +60,38 @@ class WantedParser(BaseParser):
             wait_until="domcontentloaded",
         )
 
-    def parse(self, raw_html: str, crawl_markdown: str, url: str) -> str:
-        soup = self._soup(raw_html)
+    def parse(self, raw_html: str, crawl_markdown: str, url: str, **kwargs) -> dict:
+        """JD를 정형화된 dict로 반환."""
+        job_title = kwargs.get("job_title")
 
-        sections: list[str] = []
+        md_text = crawl_markdown.raw_markdown if hasattr(crawl_markdown, "raw_markdown") else str(crawl_markdown)
 
-        # ── Title ──
-        title = self._select_text(soup, [
-            "h1[class*='JobHeader']",
-            "h2[class*='JobHeader']",
-            "h1[data-testid]",
-            "section h1",
-            "h1",
-        ])
-        if title:
-            sections.append(f"# {title}")
+        if not md_text or len(md_text.strip()) < 100:
+            logger.warning("crawl4ai Markdown이 너무 짧습니다: %d자", len(md_text))
+            return {"company": "", "title": "", "notes": md_text}
 
-        # ── Company ──
-        company = self._select_text(soup, [
-            "a[class*='JobHeader_company']",
-            "a[data-attribute-id='company__click']",
-            "h5 a",
-        ])
-        if company:
-            sections.append(f"**회사**: {company}")
+        try:
+            from slayer.llm_client import extract_jd, verify_extraction
 
-        # ── JD body — target the article container ──
-        detail = self._select_md(soup, [
-            "article[class*='JobDescription']",
-            "section[class*='JobDescription']",
-            "div[class*='JobDescription']",
-            "section[class*='JobContent']",
-            "div[class*='JobWorkDescription']",
-            ".job-description",
-        ])
-        if detail:
-            sections.append(detail)
+            logger.info("LLM으로 JD JSON 추출 중...")
+            jd_data = extract_jd(md_text, job_title=job_title)
 
-        result = "\n\n".join(sections).strip()
+            # Hallucination 체크 (텍스트 전용이므로 항상 검증)
+            suspicious = verify_extraction(md_text, jd_data)
+            if suspicious:
+                logger.warning(
+                    "Hallucination 의심 %d건 발견: %s",
+                    len(suspicious),
+                    suspicious[:3],
+                )
+                jd_data["_hallucination_warnings"] = suspicious
 
-        # Fallback to crawl4ai markdown if extraction was too thin
-        if len(result) < 100:
-            return crawl_markdown
+        except Exception as exc:
+            logger.error("LLM 추출 실패: %s", exc)
+            jd_data = {"company": "", "title": "", "notes": md_text}
 
-        return result
+        # URL과 플랫폼 정보 추가
+        jd_data["url"] = url
+        jd_data["platform"] = "wanted"
+
+        return jd_data
