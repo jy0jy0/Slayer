@@ -1,32 +1,38 @@
-# Environment
+# ─── Environment / Secrets ───
 .env
-.env.example
+.env.local
+.env.*.local
+!.env.example
 
-# Python
+# ─── Python ───
 __pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
+*.egg
 dist/
 build/
-
-# Output
-research_output/
-
-# IDE
-.vscode/
-.idea/
-
-# OS
-.DS_Store
-
-# Project notes (개인 작업 기록)
-PROJECT_NOTES.md
-RESUME_RESEARCH.md
-AGENTIC_REFACTOR_PLAN.md
-
-# Virtual environments
 .venv/
 venv/
 env/
 .python-version
+
+# ─── Output (API 호출 결과물) ───
+research_output/
+
+# ─── IDE ───
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─── OS ───
+.DS_Store
+Thumbs.db
+
+# ─── Logs ───
+*.log
+
+# ─── Local docs (개인 메모, 회의 녹음, 아키텍처 초안 등) ───
+_local_docs/
