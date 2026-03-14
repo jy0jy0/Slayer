@@ -1,7 +1,5 @@
 # Slayer — AI 기반 취업 지원 어시스턴트
 
-> DRAFT — 팀 리뷰 후 확정
-
 ## 팀
 
 | 멤버 | GitHub | 담당 |
@@ -69,7 +67,7 @@ Slayer/
 
 ---
 
-## 스키마 (DRAFT)
+## 스키마
 
 중앙 관리: `slayer/schemas.py` (Pydantic BaseModel)
 
