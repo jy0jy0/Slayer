@@ -411,7 +411,7 @@ class CompanyResearchOutput(BaseModel):
 # 자기소개서 생성 — 지호
 # ═══════════════════════════════════════════════════
 
-1
+
 class CoverLetterInput(BaseModel):
     """자기소개서 생성 입력.
 
