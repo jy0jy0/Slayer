@@ -15,7 +15,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ═══════════════════════════════════════════════════
@@ -59,8 +59,14 @@ class JDOverview(BaseModel):
 class JDRequirements(BaseModel):
     """채용 요구사항 (필수/우대)."""
 
-    required: list[str] = Field(default_factory=list)
-    preferred: list[str] = Field(default_factory=list)
+    required: list[str] = Field(
+        default_factory=list,
+        description="필수 자격 요건 — 경력·학력·기술 등 원문 문장 그대로 (예: 'Python 3년 이상 경험')",
+    )
+    preferred: list[str] = Field(
+        default_factory=list,
+        description="우대 사항 — 원문 문장 그대로 (예: 'AWS 경험자 우대')",
+    )
 
 
 class JDSchema(BaseModel):
@@ -74,14 +80,40 @@ class JDSchema(BaseModel):
     title: str
     position: str
     overview: JDOverview = Field(default_factory=JDOverview)
-    responsibilities: list[str] = Field(default_factory=list)
-    requirements: JDRequirements = Field(default_factory=JDRequirements)
-    skills: list[str] = Field(default_factory=list)
+    responsibilities: list[str] = Field(
+        default_factory=list,
+        description="주요 업무 내용 — '이 포지션에서 무엇을 하는지' 설명하는 항목만 (자격 요건 제외)",
+    )
+    requirements: JDRequirements = Field(
+        default_factory=JDRequirements,
+        description="자격 요건 및 우대 사항 — 기술 스택 포함 모든 조건을 원문 문장으로",
+    )
+    skills: list[str] = Field(
+        default_factory=list,
+        description=(
+            "ATS 키워드 매칭용 기술 스택 목록 — requirements(required/preferred)에 등장한 기술 키워드만 "
+            "명사형으로 중복 없이 추출 (예: ['python', 'fastapi', 'aws']). "
+            "responsibilities나 원문에 없는 기술은 추가하지 말 것."
+        ),
+    )
     benefits: list[str] = Field(default_factory=list)
     process: list[str] = Field(default_factory=list)
     notes: Optional[str] = None
     url: Optional[str] = None
     platform: Optional[str] = None
+
+    @field_validator("skills", mode="before")
+    @classmethod
+    def normalize_skills(cls, v: list[str]) -> list[str]:
+        """소문자 정규화 + 중복 제거 (pytorch/PyTorch/PYTORCH → pytorch)."""
+        seen: set[str] = set()
+        result: list[str] = []
+        for skill in v:
+            normalized = skill.strip().lower()
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                result.append(normalized)
+        return result
 
 
 # ═══════════════════════════════════════════════════
