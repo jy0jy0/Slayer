@@ -5,7 +5,7 @@
 | 멤버 | GitHub | 담당 |
 |------|--------|------|
 | 지호 | @jy0jy0 | 기업 리서치, 이력서 최적화, 자기소개서 |
-| 현지 | @hyeonjinnoh | JD 파싱, 면접 질문 |
+| 현지 | @shinhyunji36 | JD 파싱, 면접 질문 |
 | 예신 | @yesinkim | 이력서 파싱, Gmail 모니터, 프론트엔드, DB |
 
 ---
@@ -33,6 +33,9 @@ Slayer/
 │       └── cover_letter/       # 지호
 ├── web/                        # React 프론트엔드 (예신)
 ├── supabase/                   # Google OAuth (예신)
+├── docs/                       # 파이프라인/모듈 문서
+│   └── pipelines/              # 파이프라인별 구조도 및 사용법
+├── scripts/                    # 로컬 테스트 스크립트
 ├── data/                       # 테스트/샘플 데이터
 │   ├── resumes/                # 이력서 PDF 5건
 │   └── jds/                    # JD 샘플
