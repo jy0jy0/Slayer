@@ -230,7 +230,11 @@ def generate_interview_questions(
     raw = provider.generate_json(_build_prompt(inp, categories))
     logger.info("응답 수신 완료, 파싱 중...")
 
-    data = json.loads(raw)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.error("LLM 응답 JSON 파싱 실패. raw response: %s", raw)
+        raise
 
     questions = [InterviewQuestion(**q) for q in data.get("questions", [])]
     sample_answers = [SampleAnswer(**a) for a in data.get("sample_answers", [])]
