@@ -1,0 +1,26 @@
+[project]
+name = "slayer"
+version = "0.1.0"
+description = "AI-powered job seeking assistant"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "click~=8.3.1",
+    "httpx~=0.28.0",
+    "openai~=1.0.0",
+    "pydantic~=2.0.0",
+    "python-dotenv~=1.0.0",
+    # JD scraper (현지)
+    # "crawl4ai>=0.8.0",
+    # "google-genai>=1.64.0",
+    # API server
+    # "fastapi>=0.115.0",
+    # "uvicorn>=0.34.0",
+    # DB
+    # "sqlalchemy>=2.0.0",
+    # "psycopg2-binary>=2.9.0",
+    # "alembic>=1.14.0",
+]
+
+[project.scripts]
+slayer = "slayer.pipelines.jd_parser.cli:main"
