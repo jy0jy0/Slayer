@@ -19,6 +19,9 @@ env/
 
 # ─── Output (API 호출 결과물) ───
 research_output/
+data/jds/
+parsed_jd/
+raw/
 
 # ─── IDE ───
 .vscode/
