@@ -476,6 +476,64 @@ class CoverLetterOutput(BaseModel):
 
 
 # ═══════════════════════════════════════════════════
+# 면접 질문 생성 — 현지
+# ═══════════════════════════════════════════════════
+
+
+class InterviewCategory(str, Enum):
+    """면접 질문 카테고리."""
+
+    TECHNICAL = "기술"
+    EXPERIENCE = "경험"
+    SITUATIONAL = "상황/행동"
+    PERSONALITY = "인성"
+    CULTURE_FIT = "컬처핏"
+    COMPANY_KNOWLEDGE = "기업 이해도"
+
+
+class InterviewQuestion(BaseModel):
+    """면접 질문 항목."""
+
+    category: InterviewCategory
+    question: str
+    intent: str   # 면접관이 이 질문을 하는 이유
+    tip: str      # 답변 팁
+    source: str   # 생성 근거 (e.g. "missing_keyword: Kubernetes", "company_news: 흑자전환")
+
+
+class SampleAnswer(BaseModel):
+    """면접 질문 예시 답변 (STAR 기법)."""
+
+    question: str
+    answer: str
+
+
+class InterviewQuestionsInput(BaseModel):
+    """면접 질문 생성 입력.
+
+    jd, resume은 필수.
+    company_research가 없으면 컬처핏·기업이해도 카테고리가 자동 제외됨.
+    match_result가 없으면 상황/행동 카테고리가 자동 제외됨.
+    """
+
+    jd: JDSchema
+    resume: ParsedResume
+    company_research: Optional[CompanyResearchOutput] = None
+    match_result: Optional[MatchResult] = None
+    categories: Optional[list[InterviewCategory]] = None  # None이면 전체 생성
+    questions_per_category: int = Field(default=3, ge=1, le=10)
+
+
+class InterviewQuestionsOutput(BaseModel):
+    """면접 질문 생성 출력."""
+
+    questions: list[InterviewQuestion]
+    sample_answers: list[SampleAnswer]
+    weak_areas: list[str]       # 우선 대비 필요 영역 (MatchResult.weaknesses 요약)
+    excluded_categories: list[str]  # 데이터 부족으로 제외된 카테고리 (비어있으면 전체 생성됨)
+
+
+# ═══════════════════════════════════════════════════
 # 전형 단계 (회사별 유동적 채용 프로세스)
 # ═══════════════════════════════════════════════════
 
