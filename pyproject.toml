@@ -7,19 +7,21 @@ requires-python = ">=3.11"
 dependencies = [
     "click~=8.3.1",
     "httpx~=0.28.0",
-    "openai~=1.50",
-    "pydantic~=2.9",
+    "openai>=1.40.0",
+    "pydantic>=2.9.0,<3.0.0",
     "python-dotenv~=1.0.0",
-    # JD scraper (현지)
+    # JD scraper / Resume parser
     # "crawl4ai>=0.8.0",
-    "google-genai~=1.64",
+    "google-genai>=1.64.0",
+    "PyMuPDF>=1.24.0",
+    "python-docx>=1.1.0",
     # API server
     # "fastapi>=0.115.0",
     # "uvicorn>=0.34.0",
     # DB
-    # "sqlalchemy>=2.0.0",
-    # "psycopg2-binary>=2.9.0",
-    # "alembic>=1.14.0",
+    "sqlalchemy>=2.0.0",
+    "psycopg2-binary>=2.9.0",
+    "alembic>=1.14.0",
 ]
 
 [build-system]
@@ -28,3 +30,8 @@ build-backend = "hatchling.build"
 
 [project.scripts]
 slayer = "slayer.pipelines.jd_parser.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
