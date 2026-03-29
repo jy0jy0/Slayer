@@ -2,7 +2,7 @@
 
 PDF:  PyMuPDF (fitz)
 DOCX: python-docx
-MD/TXT: 직접 읽기
+MD/TXT/JSON: 직접 읽기
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ def extract_text(file_path: str | Path, fmt: FileFormat) -> str:
         FileFormat.DOCX: _extract_docx,
         FileFormat.MD: _extract_plain,
         FileFormat.TXT: _extract_plain,
+        FileFormat.JSON: _extract_plain,
     }
 
     try:

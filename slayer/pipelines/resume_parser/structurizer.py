@@ -1,21 +1,18 @@
-"""추출된 텍스트 → Gemini structured output → ParsedResume.
+"""추출된 텍스트 → LLM structured output → ParsedResume.
 
-google-genai SDK의 response_schema를 활용하여
-JSON 파싱 오류 없이 ParsedResume을 생성합니다.
+GOOGLE_API_KEY → Gemini 2.5 Flash
+OPENAI_API_KEY → GPT-4o-mini (fallback)
+
+공유 클라이언트: slayer.services.llm_client
 """
 
 from __future__ import annotations
 
 from datetime import date
 
-from google import genai
-from google.genai.types import GenerateContentConfig
-
-from slayer.config import GOOGLE_API_KEY
 from slayer.pipelines.resume_parser.file_detector import ResumeLLMError
 from slayer.schemas import ExperienceItem, ParsedResume
-
-_MODEL = "gemini-2.5-flash"
+from slayer.services.llm_client import generate_structured
 
 _SYSTEM_PROMPT = """\
 You are an expert resume parser. Extract structured information from the resume text below.
@@ -54,33 +51,19 @@ def _calc_experience_years(experiences: list[ExperienceItem]) -> float:
 
 
 def structurize(text: str, source_format: str) -> ParsedResume:
-    """텍스트를 Gemini로 구조화하여 ParsedResume 반환.
+    """텍스트를 LLM으로 구조화하여 ParsedResume 반환.
+
+    GOOGLE_API_KEY 있으면 Gemini, 없으면 OPENAI_API_KEY로 자동 fallback.
 
     Args:
         text: 추출된 이력서 텍스트
-        source_format: 원본 파일 형식 ("pdf", "docx", "md", "txt")
+        source_format: 원본 파일 형식 ("pdf", "docx", "md", "txt", "json")
 
     Raises:
-        ResumeLLMError: Gemini API 호출 또는 응답 파싱 실패
+        ResumeLLMError: API 키 없음 또는 LLM 호출 실패
     """
-    client = genai.Client(api_key=GOOGLE_API_KEY)
-
     try:
-        response = client.models.generate_content(
-            model=_MODEL,
-            contents=text,
-            config=GenerateContentConfig(
-                system_instruction=_SYSTEM_PROMPT,
-                response_mime_type="application/json",
-                response_schema=ParsedResume,
-                temperature=0.0,
-            ),
-        )
-    except Exception as e:
-        raise ResumeLLMError(stage="structurize", cause=e) from e
-
-    try:
-        result = ParsedResume.model_validate_json(response.text)
+        result = generate_structured(text, schema=ParsedResume, system_prompt=_SYSTEM_PROMPT)
     except Exception as e:
         raise ResumeLLMError(stage="structurize", cause=e) from e
 
