@@ -7,8 +7,8 @@ requires-python = ">=3.11"
 dependencies = [
     "click~=8.3.1",
     "httpx~=0.28.0",
-    "openai~=1.0.0",
-    "pydantic~=2.0.0",
+    "openai>=1.40.0",
+    "pydantic>=2.7.4",
     "python-dotenv~=1.0.0",
     # JD scraper (현지)
     # "crawl4ai>=0.8.0",
@@ -20,7 +20,14 @@ dependencies = [
     "sqlalchemy>=2.0.0",
     "psycopg2-binary>=2.9.0",
     "alembic>=1.14.0",
+    # Agent framework
+    "langgraph>=0.4.0",
+    "langchain-openai>=0.3.0",
+    # UI
+    "streamlit>=1.40.0",
+    "plotly>=6.0.0",
 ]
 
 [project.scripts]
 slayer = "slayer.pipelines.jd_parser.cli:main"
+# slayer-ui: streamlit run slayer/ui/app.py
