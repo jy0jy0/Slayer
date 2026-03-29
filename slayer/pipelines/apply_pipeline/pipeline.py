@@ -1,7 +1,5 @@
 """지원 액션 파이프라인.
 
-담당: 예신
-
 Flow:
     1. 사용자 승인
     2. DB 저장 (applications INSERT)
