@@ -38,8 +38,49 @@ class BlockType(str, Enum):
     OTHER = "other"
 
 
+class ApplicationStatus(str, Enum):
+    """지원 상위 상태 (대시보드 필터용).
+
+    상세 전형 단계는 ApplicationStage로 별도 관리.
+    """
+
+    SCRAPPED = "scrapped"
+    REVIEWING = "reviewing"
+    APPLIED = "applied"
+    IN_PROGRESS = "in_progress"
+    FINAL_PASS = "final_pass"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+
+
+class TriggerType(str, Enum):
+    """상태 변경 트리거 유형."""
+
+    EMAIL_DETECTED = "email_detected"
+    USER_MANUAL = "user_manual"
+    APPLY_ACTION = "apply_action"
+    AGENT_AUTO = "agent_auto"
+
+
+class GmailStatusType(str, Enum):
+    """Gmail Monitor가 분류한 메일 유형."""
+
+    PASS = "PASS"
+    FAIL = "FAIL"
+    INTERVIEW = "INTERVIEW"
+    REJECT = "REJECT"
+
+
+class StageStatus(str, Enum):
+    """전형 단계 상태."""
+
+    PENDING = "pending"
+    PASSED = "passed"
+    FAILED = "failed"
+
+
 # ═══════════════════════════════════════════════════
-# JD (채용공고) 스키마 — 현지님 TypedDict 호환
+# JD (채용공고) 스키마
 # ═══════════════════════════════════════════════════
 
 
@@ -66,7 +107,7 @@ class JDRequirements(BaseModel):
 class JDSchema(BaseModel):
     """채용공고 구조화 데이터.
 
-    현지님(shinhyunji36)의 JD 파싱 Pipeline 출력과 1:1 호환.
+    JD 파싱 Pipeline 출력과 1:1 호환.
     Discussion #6 (2026-03-13) 스키마 기준.
     """
 
@@ -85,7 +126,7 @@ class JDSchema(BaseModel):
 
 
 # ═══════════════════════════════════════════════════
-# 이력서 파싱 결과 — 예신님 이력서 파싱 Pipeline 출력
+# 이력서 파싱 결과
 # ═══════════════════════════════════════════════════
 
 
@@ -156,7 +197,7 @@ class PublicationItem(BaseModel):
 class ParsedResume(BaseModel):
     """이력서 파싱 결과.
 
-    예신님(yesinkim) 이력서 파싱 Pipeline의 출력 스키마.
+    이력서 파싱 Pipeline의 출력 스키마.
     다양한 포맷(PDF, DOCX, MD, JSON, TXT)의 이력서를 파싱한 결과를
     통일된 구조로 제공합니다.
     """
@@ -314,7 +355,7 @@ class MatchResult(BaseModel):
 
 
 # ═══════════════════════════════════════════════════
-# 이력서 최적화 Agent — 지호 + 현지
+# 이력서 최적화 Agent
 # ═══════════════════════════════════════════════════
 
 
@@ -408,7 +449,7 @@ class CompanyResearchOutput(BaseModel):
 
 
 # ═══════════════════════════════════════════════════
-# 자기소개서 생성 — 지호
+# 자기소개서 생성
 # ═══════════════════════════════════════════════════
 
 
@@ -432,3 +473,135 @@ class CoverLetterOutput(BaseModel):
     key_points: list[str] = Field(default_factory=list)
     jd_keyword_coverage: float = Field(ge=0.0, le=1.0)
     word_count: int = 0
+
+
+# ═══════════════════════════════════════════════════
+# 전형 단계 (회사별 유동적 채용 프로세스)
+# ═══════════════════════════════════════════════════
+
+
+class ApplicationStage(BaseModel):
+    """지원 건의 개별 전형 단계.
+
+    회사마다 채용 프로세스가 다르므로 (코딩테스트, 과제, AI면접 등)
+    stage_name을 자유 입력으로 두어 유연하게 대응.
+    """
+
+    stage_name: str  # "서류전형", "코딩테스트", "과제전형", "1차면접", "AI면접" 등
+    stage_order: int
+    status: StageStatus = StageStatus.PENDING
+    scheduled_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+# ═══════════════════════════════════════════════════
+# Gmail Monitor
+# ═══════════════════════════════════════════════════
+
+
+class InterviewDetails(BaseModel):
+    """면접 상세 정보 (면접 안내 메일에서 추출)."""
+
+    datetime_str: Optional[str] = None  # ISO8601
+    location: Optional[str] = None
+    format: Optional[str] = None  # "online" | "offline"
+    platform: Optional[str] = None  # "Zoom", "Google Meet" 등
+    duration_minutes: Optional[int] = None
+
+
+class GmailParseResult(BaseModel):
+    """Gmail Monitor LLM 파싱 출력.
+
+    수신된 메일을 분석하여 채용 상태 변화를 구조화.
+    """
+
+    company: str
+    status_type: GmailStatusType
+    stage_name: Optional[str] = None  # "코딩테스트", "1차면접" 등
+    next_step: Optional[str] = None
+    interview_details: Optional[InterviewDetails] = None
+    raw_summary: str = ""
+
+
+# ═══════════════════════════════════════════════════
+# Status Update
+# ═══════════════════════════════════════════════════
+
+
+class StatusEvidence(BaseModel):
+    """상태 변경 근거."""
+
+    gmail_event_id: Optional[str] = None
+    summary: Optional[str] = None
+
+
+class StatusUpdateRequest(BaseModel):
+    """상태 변경 요청.
+
+    모든 파이프라인에서 applications.status를 갱신할 때 사용하는 공통 인터페이스.
+    status_history 테이블에 이력이 자동 기록됨.
+    """
+
+    application_id: str  # UUID
+    new_status: ApplicationStatus
+    trigger_type: TriggerType
+    triggered_by: str  # "user" | "gmail_monitor" | "apply_pipeline" | "agent"
+    evidence: Optional[StatusEvidence] = None
+    note: Optional[str] = None
+
+
+class StatusUpdateResponse(BaseModel):
+    """상태 변경 응답."""
+
+    success: bool
+    application_id: str
+    previous_status: ApplicationStatus
+    new_status: ApplicationStatus
+    history_id: Optional[str] = None  # status_history row ID
+    updated_at: Optional[str] = None
+
+
+# ═══════════════════════════════════════════════════
+# Apply Pipeline
+# ═══════════════════════════════════════════════════
+
+
+class CalendarEventResult(BaseModel):
+    """Calendar 이벤트 생성 결과."""
+
+    event_type: str  # "deadline" | "interview" | "follow_up"
+    google_event_id: Optional[str] = None
+    title: str
+    start_datetime: str
+    sync_status: str = "pending"  # "pending" | "synced" | "failed"
+
+
+class ApplyRequest(BaseModel):
+    """지원 액션 요청.
+
+    사용자가 지원을 승인하면 Apply Pipeline이 실행:
+    DB 저장 → Calendar 등록 → 상태 업데이트.
+    """
+
+    user_id: str  # UUID
+    job_posting_id: str  # UUID
+    resume_id: str  # UUID
+    company_name: str
+    position: str
+    ats_score: Optional[float] = None
+    gap_summary: Optional[str] = None
+    matched_keywords: list[str] = Field(default_factory=list)
+    missing_keywords: list[str] = Field(default_factory=list)
+    deadline: Optional[str] = None  # YYYY-MM-DD
+    optimized_resume_url: Optional[str] = None
+    cover_letter: Optional[str] = None
+
+
+class ApplyResponse(BaseModel):
+    """지원 액션 응답."""
+
+    success: bool
+    application_id: Optional[str] = None
+    calendar_events: list[CalendarEventResult] = Field(default_factory=list)
+    created_at: Optional[str] = None

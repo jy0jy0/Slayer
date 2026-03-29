@@ -18,7 +18,7 @@ Slayer/
 │   ├── schemas.py              # 공통 스키마 (Pydantic)
 │   ├── config.py               # 공통 설정
 │   ├── api/                    # FastAPI 엔드포인트
-│   ├── db/                     # GCP PostgreSQL (9 tables)
+│   ├── db/                     # Supabase PostgreSQL (10 tables)
 │   ├── pipelines/              # 단일 패스 처리
 │   │   ├── jd_parser/          # 현지 — JD 스크래핑+파싱
 │   │   ├── resume_parser/      # 예신 — OCR 이력서 파싱
@@ -94,11 +94,11 @@ Slayer/
 
 ---
 
-## DB (GCP PostgreSQL)
+## DB (Supabase PostgreSQL)
 
-예신 설계. 9개 테이블: `users`, `resumes`, `companies`, `job_postings`, `applications`, `status_history`, `gmail_events`, `calendar_events`, `agent_logs`
+10개 테이블: `users`, `resumes`, `companies`, `job_postings`, `applications`, `application_stages`, `status_history`, `gmail_events`, `calendar_events`, `agent_logs`
 
-스키마 상세: [Discussion #6](https://github.com/jy0jy0/Slayer/discussions/6#discussioncomment-16119302)
+스키마 상세: [`docs/data-schema.md`](docs/data-schema.md) | [Discussion #6](https://github.com/jy0jy0/Slayer/discussions/6#discussioncomment-16119302)
 
 ---
 
