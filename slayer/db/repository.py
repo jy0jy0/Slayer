@@ -104,3 +104,26 @@ def save_agent_log(
         session.add(log)
         logger.info("Saved agent log: %s (%s)", agent_name, status)
         return log
+
+
+@_safe_db_op
+def save_match_result(jd_json: str, resume_json: str, match_result) -> Any:
+    """Save matching result. Stores JD, resume data, and ATS analysis."""
+    from slayer.db.models import Application
+    with get_session() as session:
+        app = Application(
+            id=uuid.uuid4(),
+            user_id=uuid.UUID('00000000-0000-0000-0000-000000000000'),  # placeholder
+            company_id=uuid.UUID('00000000-0000-0000-0000-000000000000'),  # placeholder
+            status='reviewing',
+            ats_score=match_result.ats_score,
+            score_breakdown=match_result.score_breakdown,
+            matched_keywords=match_result.matched_keywords,
+            missing_keywords=match_result.missing_keywords,
+            strengths=match_result.strengths,
+            weaknesses=match_result.weaknesses,
+            gap_summary=match_result.gap_summary,
+        )
+        session.add(app)
+        logger.info("Saved match result: ATS %.0f", match_result.ats_score)
+        return app

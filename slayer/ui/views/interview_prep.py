@@ -1,10 +1,10 @@
 """Interview Prep page — generate tailored interview questions by category."""
 
 import json
+import time
 import streamlit as st
 from slayer.ui.styles import GLOBAL_CSS
 from slayer.ui.components import render_page_header
-from slayer.ui.fixtures import SAMPLE_JD_JSON, SAMPLE_RESUME_JSON
 
 
 # Category display config: (label, emoji)
@@ -57,6 +57,7 @@ def render():
     run_btn = st.button("🎯 Generate Interview Questions", type="primary", use_container_width=True)
 
     if run_btn:
+        t_start = time.time()
         with st.status("Generating interview questions...", expanded=True) as status:
             try:
                 from slayer.pipelines.interview_questions import generate_interview_questions
@@ -87,9 +88,33 @@ def render():
                 if result.excluded_categories:
                     status.write(f"ℹ️ Excluded categories (insufficient data): {', '.join(result.excluded_categories)}")
                 status.update(label="✅ Interview questions generated", state="complete")
+
+                # DB save (non-blocking)
+                duration_ms = int((time.time() - t_start) * 1000)
+                try:
+                    from slayer.db.repository import save_agent_log
+                    save_agent_log(
+                        agent_name="interview_prep",
+                        status="success",
+                        input_summary=f"questions_per_category={questions_per_category}, company={jd.company}, title={jd.title}",
+                        output_summary=f"total_questions={len(result.questions)}, excluded={result.excluded_categories or []}, weak_areas={len(result.weak_areas) if result.weak_areas else 0}",
+                        duration_ms=duration_ms,
+                    )
+                except Exception:
+                    pass
             except Exception as e:
                 status.update(label="❌ Generation failed", state="error")
                 st.error(f"Generation failed: {e}")
+                # DB save failure log (non-blocking)
+                try:
+                    from slayer.db.repository import save_agent_log
+                    save_agent_log(
+                        agent_name="interview_prep",
+                        status="failed",
+                        error_message=str(e)[:500],
+                    )
+                except Exception:
+                    pass
                 return
 
     if "interview_result" not in st.session_state:

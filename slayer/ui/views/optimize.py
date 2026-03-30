@@ -2,10 +2,10 @@
 
 import asyncio
 import json
+import time
 import streamlit as st
 from slayer.ui.styles import GLOBAL_CSS
 from slayer.ui.components import render_page_header, render_change_list
-from slayer.ui.fixtures import SAMPLE_JD_JSON, SAMPLE_RESUME_JSON
 
 
 def _run_optimize_with_status(input_data, status_container):
@@ -59,9 +59,14 @@ def render():
     render_page_header("Resume Optimize", "Iteratively optimize resume to reach target ATS score.")
 
     has_match = "match_result" in st.session_state
+    has_resume = "resume_data" in st.session_state
+    has_jd = "jd_data" in st.session_state
 
     if not has_match:
         st.warning("Run **JD-Resume Match** first. Match results will be auto-loaded.")
+
+    if not has_resume or not has_jd:
+        st.warning("Resume and JD data are required. Run **JD-Resume Match** first to load data.")
 
     st.markdown("#### Optimization Parameters")
     pc1, pc2 = st.columns(2)
@@ -71,17 +76,27 @@ def render():
         max_iter = st.slider("Max Iterations", 1, 5, 3, 1)
 
     with st.expander("📂 Source Data", expanded=False):
-        resume_json = st.text_area("Resume JSON", value=st.session_state.get("resume_data", SAMPLE_RESUME_JSON), height=150)
-        jd_json = st.text_area("JD JSON", value=st.session_state.get("jd_data", SAMPLE_JD_JSON), height=150)
+        if has_resume:
+            resume_json = st.text_area("Resume JSON", value=st.session_state["resume_data"], height=150)
+        else:
+            st.warning("No resume data available. Go to **JD-Resume Match** to load resume.")
+            resume_json = st.text_area("Resume JSON (manual input)", height=150)
+        if has_jd:
+            jd_json = st.text_area("JD JSON", value=st.session_state["jd_data"], height=150)
+        else:
+            st.warning("No JD data available. Go to **JD-Resume Match** to load JD.")
+            jd_json = st.text_area("JD JSON (manual input)", height=150)
         if has_match:
             match_json = json.dumps(st.session_state["match_result"].model_dump(), ensure_ascii=False, indent=2)
             st.text_area("Match Result (auto-loaded)", value=match_json, height=100, disabled=True)
         else:
             match_json = st.text_area("Match Result JSON (manual input)", height=100)
 
-    run_btn = st.button("✨ Start Iteration", type="primary", use_container_width=True, disabled=not has_match and not match_json)
+    can_run = bool(resume_json) and bool(jd_json) and (has_match or bool(match_json))
+    run_btn = st.button("✨ Start Iteration", type="primary", use_container_width=True, disabled=not can_run)
 
     if run_btn:
+        t_start = time.time()
         with st.status("🤖 Starting optimization agent...", expanded=True) as status:
             try:
                 from slayer.schemas import JDSchema, MatchResult, ParsedResume, ResumeOptimizationInput
@@ -97,9 +112,50 @@ def render():
                 result = _run_optimize_with_status(input_data, status)
                 st.session_state["optimization_result"] = result
                 st.session_state["optimization_initial_score"] = match_result.ats_score
+
+                # Update resume_data with optimized version so downstream pages use it
+                if result.optimized_blocks:
+                    try:
+                        optimized_resume = resume.model_copy()
+                        # Apply optimized blocks back to resume fields
+                        for block in result.optimized_blocks:
+                            field = block.get("field") or block.get("section")
+                            value = block.get("optimized") or block.get("value")
+                            if field and value and hasattr(optimized_resume, field):
+                                setattr(optimized_resume, field, value)
+                        optimized_json = json.dumps(optimized_resume.model_dump(), ensure_ascii=False, indent=2)
+                        st.session_state["resume_data"] = optimized_json
+                        st.session_state["resume_source"] = "optimized"
+                    except Exception:
+                        pass  # Keep original resume_data if conversion fails
+
+                # DB save (non-blocking)
+                duration_ms = int((time.time() - t_start) * 1000)
+                try:
+                    from slayer.db.repository import save_agent_log
+                    save_agent_log(
+                        agent_name="resume_optimizer",
+                        status="success",
+                        input_summary=f"target={target_score}, max_iter={max_iter}",
+                        output_summary=f"final_score={result.final_ats_score:.0f}, improvement={result.score_improvement:+.0f}, iterations={result.iterations_used}",
+                        duration_ms=duration_ms,
+                    )
+                except Exception:
+                    pass
             except Exception as e:
                 status.update(label="❌ Optimization failed", state="error")
                 st.error(f"Optimization failed: {e}")
+                # DB save failure log (non-blocking)
+                try:
+                    from slayer.db.repository import save_agent_log
+                    save_agent_log(
+                        agent_name="resume_optimizer",
+                        status="failed",
+                        input_summary=f"target={target_score}, max_iter={max_iter}",
+                        error_message=str(e)[:500],
+                    )
+                except Exception:
+                    pass
                 return
 
     if "optimization_result" not in st.session_state:
@@ -117,7 +173,7 @@ def render():
     with m2:
         st.metric("AFTER SCORE", f"{final:.0f} /100", f"{improvement:+.0f}")
     with m3:
-        pct = (improvement / initial * 100) if initial > 0 else 0
+        pct = (improvement / initial * 100) if initial and initial > 0 else 0
         st.metric("IMPROVEMENT", f"+{pct:.0f}%", f"{result.iterations_used} iterations")
 
     if result.optimization_summary:

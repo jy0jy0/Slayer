@@ -2,10 +2,10 @@
 
 import asyncio
 import json
+import time
 import streamlit as st
 from slayer.ui.styles import GLOBAL_CSS
 from slayer.ui.components import render_page_header, render_score_donut
-from slayer.ui.fixtures import SAMPLE_JD_JSON, SAMPLE_RESUME_JSON
 
 
 def _run_cover_letter_with_status(input_data, status_container):
@@ -60,22 +60,45 @@ def render():
 
     has_research = "company_research" in st.session_state
     has_match = "match_result" in st.session_state
+    has_resume = "resume_data" in st.session_state
+    has_jd = "jd_data" in st.session_state
 
-    status_cols = st.columns(2)
+    # ── Data Source Indicators ───────────────────────────────────────
+    status_cols = st.columns(4)
     with status_cols[0]:
+        if has_jd:
+            source = st.session_state.get("jd_source", "manual")
+            st.success(f"✅ JD loaded ({source})")
+        else:
+            st.warning("⚠️ No JD data")
+    with status_cols[1]:
+        if has_resume:
+            source = st.session_state.get("resume_source", "manual")
+            st.success(f"✅ Resume loaded ({source})")
+        else:
+            st.warning("⚠️ No Resume data")
+    with status_cols[2]:
         if has_research:
-            st.success(f"✅ Research loaded: {st.session_state['company_research'].company_name}")
+            st.success(f"✅ Research: {st.session_state['company_research'].company_name}")
         else:
             st.warning("Company research not found — run Company Research first.")
-    with status_cols[1]:
+    with status_cols[3]:
         if has_match:
-            st.success(f"✅ Match loaded: ATS {st.session_state['match_result'].ats_score:.0f}")
+            st.success(f"✅ Match: ATS {st.session_state['match_result'].ats_score:.0f}")
         else:
             st.warning("Match result not found — run JD-Resume Match first.")
 
     with st.expander("📂 Source Data", expanded=False):
-        resume_json = st.text_area("Resume JSON", value=st.session_state.get("resume_data", SAMPLE_RESUME_JSON), height=150)
-        jd_json = st.text_area("JD JSON", value=st.session_state.get("jd_data", SAMPLE_JD_JSON), height=150)
+        if has_resume:
+            resume_json = st.text_area("Resume JSON", value=st.session_state["resume_data"], height=150)
+        else:
+            st.warning("No resume data. Go to **JD-Resume Match** to load resume.")
+            resume_json = st.text_area("Resume JSON (manual input)", height=150)
+        if has_jd:
+            jd_json = st.text_area("JD JSON", value=st.session_state["jd_data"], height=150)
+        else:
+            st.warning("No JD data. Go to **JD-Resume Match** to load JD.")
+            jd_json = st.text_area("JD JSON (manual input)", height=150)
         if has_research:
             company_json = json.dumps(st.session_state["company_research"].model_dump(), ensure_ascii=False, indent=2)
         else:
@@ -85,10 +108,11 @@ def render():
         else:
             match_json = st.text_area("Match Result JSON (manual input)", height=100)
 
-    can_run = (has_research or company_json) and (has_match or match_json)
+    can_run = bool(resume_json) and bool(jd_json) and (has_research or bool(company_json)) and (has_match or bool(match_json))
     run_btn = st.button("✍️ Generate Cover Letter", type="primary", use_container_width=True, disabled=not can_run)
 
     if run_btn:
+        t_start = time.time()
         with st.status("🤖 Starting cover letter agent...", expanded=True) as status:
             try:
                 from slayer.schemas import CoverLetterInput, CompanyResearchOutput, JDSchema, MatchResult, ParsedResume
@@ -101,9 +125,33 @@ def render():
                 input_data = CoverLetterInput(parsed_resume=resume, jd=jd, company_research=company, match_result=match_result)
                 result = _run_cover_letter_with_status(input_data, status)
                 st.session_state["cover_letter_result"] = result
+
+                # DB save (non-blocking)
+                duration_ms = int((time.time() - t_start) * 1000)
+                try:
+                    from slayer.db.repository import save_agent_log
+                    save_agent_log(
+                        agent_name="cover_letter",
+                        status="success",
+                        input_summary=f"jd={jd.company}/{jd.title}, resume={resume.personal_info.name if resume.personal_info else '?'}",
+                        output_summary=f"words={result.word_count}, coverage={result.jd_keyword_coverage:.2f}, key_points={len(result.key_points) if result.key_points else 0}",
+                        duration_ms=duration_ms,
+                    )
+                except Exception:
+                    pass
             except Exception as e:
                 status.update(label="❌ Generation failed", state="error")
                 st.error(f"Generation failed: {e}")
+                # DB save failure log (non-blocking)
+                try:
+                    from slayer.db.repository import save_agent_log
+                    save_agent_log(
+                        agent_name="cover_letter",
+                        status="failed",
+                        error_message=str(e)[:500],
+                    )
+                except Exception:
+                    pass
                 return
 
     if "cover_letter_result" not in st.session_state:

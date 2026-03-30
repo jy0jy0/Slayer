@@ -3,12 +3,12 @@
 import asyncio
 import concurrent.futures
 import json
+import os
 import tempfile
 import streamlit as st
 import plotly.graph_objects as go
 from slayer.ui.styles import GLOBAL_CSS
 from slayer.ui.components import render_page_header, render_score_donut, render_keyword_tags
-from slayer.ui.fixtures import SAMPLE_JD_JSON, SAMPLE_RESUME_JSON
 
 
 def _run_async(coro):
@@ -39,11 +39,6 @@ def render():
     st.html(GLOBAL_CSS)
     render_page_header("JD-Resume Match", "Analyze ATS matching score between job description and resume.")
 
-    if "jd_data" not in st.session_state:
-        st.session_state["jd_data"] = SAMPLE_JD_JSON
-    if "resume_data" not in st.session_state:
-        st.session_state["resume_data"] = SAMPLE_RESUME_JSON
-
     # ── JD URL Parsing & Resume File Upload ──────────────────────────
     col_jd, col_resume = st.columns(2)
 
@@ -57,12 +52,16 @@ def render():
                     jd_schema = _scrape_jd_sync(jd_url)
                     jd_json_str = json.dumps(jd_schema.model_dump(), ensure_ascii=False, indent=2)
                     st.session_state["jd_data"] = jd_json_str
+                    st.session_state["jd_source"] = "url"
                     status.write(f"✅ Parsed: **{jd_schema.company}** — {jd_schema.title}")
                     status.update(label="✅ JD parsed from URL", state="complete")
                     st.rerun()
                 except Exception as e:
                     status.update(label="❌ JD parsing failed", state="error")
                     st.error(f"Failed to parse JD: {e}")
+                    # Clear stale data on failure
+                    st.session_state.pop("jd_data", None)
+                    st.session_state.pop("jd_source", None)
 
     with col_resume:
         st.markdown("**Resume — Upload File**")
@@ -70,6 +69,7 @@ def render():
             "Upload Resume", type=["pdf", "docx"], label_visibility="collapsed", key="resume_file_upload"
         )
         if uploaded_file is not None and st.button("📄 Parse Uploaded File", key="btn_parse_resume", use_container_width=True):
+            tmp_path = None
             with st.status("Parsing resume file...", expanded=True) as status:
                 try:
                     suffix = "." + uploaded_file.name.rsplit(".", 1)[-1]
@@ -80,6 +80,7 @@ def render():
                     resume_schema = _parse_resume_sync(tmp_path)
                     resume_json_str = json.dumps(resume_schema.model_dump(), ensure_ascii=False, indent=2)
                     st.session_state["resume_data"] = resume_json_str
+                    st.session_state["resume_source"] = "upload"
                     name = resume_schema.personal_info.name if resume_schema.personal_info else "?"
                     status.write(f"✅ Parsed resume for **{name}**")
                     status.update(label="✅ Resume parsed", state="complete")
@@ -87,35 +88,61 @@ def render():
                 except Exception as e:
                     status.update(label="❌ Resume parsing failed", state="error")
                     st.error(f"Failed to parse resume: {e}")
+                    # Clear stale data on failure
+                    st.session_state.pop("resume_data", None)
+                    st.session_state.pop("resume_source", None)
+                finally:
+                    if tmp_path and os.path.exists(tmp_path):
+                        os.unlink(tmp_path)
 
     st.markdown("")
 
+    # ── Data Source Indicators ───────────────────────────────────────
+    has_jd = "jd_data" in st.session_state
+    has_resume = "resume_data" in st.session_state
+
+    ind_c1, ind_c2 = st.columns(2)
+    with ind_c1:
+        if has_jd:
+            source = st.session_state.get("jd_source", "manual")
+            st.success(f"✅ JD loaded (source: {source})")
+        else:
+            st.warning("⚠️ No JD data — enter URL or paste JSON in Source Data below")
+    with ind_c2:
+        if has_resume:
+            source = st.session_state.get("resume_source", "manual")
+            st.success(f"✅ Resume loaded (source: {source})")
+        else:
+            st.warning("⚠️ No Resume data — upload file or paste JSON in Source Data below")
+
     # ── Summary Card ─────────────────────────────────────────────────
-    jd_data = st.session_state["jd_data"]
-    resume_data = st.session_state["resume_data"]
+    jd_data = st.session_state.get("jd_data", "")
+    resume_data = st.session_state.get("resume_data", "")
 
-    try:
-        jd_parsed = json.loads(jd_data)
-        resume_parsed = json.loads(resume_data)
-        company = jd_parsed.get('company', '?')
-        title = jd_parsed.get('title', '?')
-        name = resume_parsed.get('personal_info', {}).get('name', '?')
-        st.html(f"""
-        <div class="sl-card" style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px;">
-            <div>
-                <span style="font-size:14px; color:#888;">JD</span>
-                <span style="font-size:15px; font-weight:600; margin-left:8px;">{company} — {title}</span>
+    if jd_data and resume_data:
+        try:
+            jd_parsed = json.loads(jd_data)
+            resume_parsed = json.loads(resume_data)
+            company = jd_parsed.get('company', '?')
+            title = jd_parsed.get('title', '?')
+            name = resume_parsed.get('personal_info', {}).get('name', '?')
+            st.html(f"""
+            <div class="sl-card" style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px;">
+                <div>
+                    <span style="font-size:14px; color:#888;">JD</span>
+                    <span style="font-size:15px; font-weight:600; margin-left:8px;">{company} — {title}</span>
+                </div>
+                <div>
+                    <span style="font-size:14px; color:#888;">Candidate</span>
+                    <span style="font-size:15px; font-weight:600; margin-left:8px;">{name}</span>
+                </div>
             </div>
-            <div>
-                <span style="font-size:14px; color:#888;">Candidate</span>
-                <span style="font-size:15px; font-weight:600; margin-left:8px;">{name}</span>
-            </div>
-        </div>
-        """)
-    except json.JSONDecodeError:
-        st.warning("Please check JSON format.")
+            """)
+        except json.JSONDecodeError:
+            st.warning("Please check JSON format.")
 
-    run_btn = st.button("📊 Start Matching", type="primary", use_container_width=True)
+    can_match = bool(jd_data) and bool(resume_data)
+    run_btn = st.button("📊 Start Matching", type="primary", use_container_width=True, disabled=not can_match)
 
     if run_btn:
         with st.status("🤖 Analyzing resume match...", expanded=True) as status:
@@ -134,13 +161,23 @@ def render():
                 st.session_state["match_result"] = result
                 st.session_state["jd_data"] = jd_data
                 st.session_state["resume_data"] = resume_data
+
+                # DB save (non-blocking)
+                try:
+                    from slayer.db.repository import save_match_result
+                    save_match_result(jd_data, resume_data, result)
+                except Exception:
+                    pass
             except Exception as e:
                 status.update(label="❌ Matching failed", state="error")
                 st.error(f"Matching failed: {e}")
                 return
 
     if "match_result" not in st.session_state:
-        st.info("Click the button above to run matching analysis with sample data.")
+        if can_match:
+            st.info("Click the button above to run matching analysis.")
+        else:
+            st.info("Provide both JD and Resume data, then run matching analysis.")
         return
 
     st.divider()
@@ -195,12 +232,14 @@ def render():
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("**Job Description (JD)**")
-            new_jd = st.text_area("JD", value=st.session_state["jd_data"], height=200, label_visibility="collapsed", key="match_jd_edit")
+            new_jd = st.text_area("JD", value=st.session_state.get("jd_data", ""), height=200, label_visibility="collapsed", key="match_jd_edit")
         with c2:
             st.markdown("**Resume**")
-            new_resume = st.text_area("Resume", value=st.session_state["resume_data"], height=200, label_visibility="collapsed", key="match_resume_edit")
+            new_resume = st.text_area("Resume", value=st.session_state.get("resume_data", ""), height=200, label_visibility="collapsed", key="match_resume_edit")
         if st.button("💾 Save Changes", key="save_match_input"):
             st.session_state["jd_data"] = new_jd
+            st.session_state["jd_source"] = "manual"
             st.session_state["resume_data"] = new_resume
+            st.session_state["resume_source"] = "manual"
             st.success("Saved. Run matching analysis again to apply.")
             st.rerun()
