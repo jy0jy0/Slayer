@@ -7,6 +7,7 @@ Usage:
         session.query(User).all()
 """
 
+import logging
 from contextlib import contextmanager
 
 from sqlalchemy import create_engine
@@ -14,12 +15,26 @@ from sqlalchemy.orm import sessionmaker
 
 from slayer.config import DATABASE_URL
 
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine)
+logger = logging.getLogger(__name__)
+
+if DATABASE_URL:
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    SessionLocal = sessionmaker(bind=engine)
+else:
+    engine = None
+    SessionLocal = None
+    logger.warning("DATABASE_URL not set — DB operations will be skipped")
+
+
+def is_db_available() -> bool:
+    """Check if DB is configured and reachable."""
+    return SessionLocal is not None
 
 
 @contextmanager
 def get_session():
+    if SessionLocal is None:
+        raise RuntimeError("DATABASE_URL not configured")
     session = SessionLocal()
     try:
         yield session
