@@ -1,7 +1,9 @@
 """JD-Resume Match page."""
 
 import asyncio
+import concurrent.futures
 import json
+import tempfile
 import streamlit as st
 import plotly.graph_objects as go
 from slayer.ui.styles import GLOBAL_CSS
@@ -15,10 +17,22 @@ def _run_async(coro):
     except RuntimeError:
         loop = None
     if loop and loop.is_running():
-        import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor() as pool:
             return pool.submit(asyncio.run, coro).result()
     return asyncio.run(coro)
+
+
+def _scrape_jd_sync(url: str):
+    """Scrape JD from URL. Uses ThreadPoolExecutor because scrape_jd calls asyncio.run internally."""
+    from slayer.pipelines.jd_parser.scraper import scrape_jd
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        return pool.submit(scrape_jd, url, True).result()
+
+
+def _parse_resume_sync(file_path: str):
+    """Parse resume from file path."""
+    from slayer.pipelines.resume_parser import parse_resume
+    return parse_resume(file_path)
 
 
 def render():
@@ -30,6 +44,53 @@ def render():
     if "resume_data" not in st.session_state:
         st.session_state["resume_data"] = SAMPLE_RESUME_JSON
 
+    # ── JD URL Parsing & Resume File Upload ──────────────────────────
+    col_jd, col_resume = st.columns(2)
+
+    with col_jd:
+        st.markdown("**JD — Parse from URL**")
+        jd_url = st.text_input("JD URL", placeholder="https://...", label_visibility="collapsed", key="jd_url_input")
+        if st.button("🔗 Parse from URL", key="btn_parse_jd", use_container_width=True, disabled=not jd_url):
+            with st.status("Scraping JD from URL...", expanded=True) as status:
+                try:
+                    status.write("⏳ Fetching page and extracting JD...")
+                    jd_schema = _scrape_jd_sync(jd_url)
+                    jd_json_str = json.dumps(jd_schema.model_dump(), ensure_ascii=False, indent=2)
+                    st.session_state["jd_data"] = jd_json_str
+                    status.write(f"✅ Parsed: **{jd_schema.company}** — {jd_schema.title}")
+                    status.update(label="✅ JD parsed from URL", state="complete")
+                    st.rerun()
+                except Exception as e:
+                    status.update(label="❌ JD parsing failed", state="error")
+                    st.error(f"Failed to parse JD: {e}")
+
+    with col_resume:
+        st.markdown("**Resume — Upload File**")
+        uploaded_file = st.file_uploader(
+            "Upload Resume", type=["pdf", "docx"], label_visibility="collapsed", key="resume_file_upload"
+        )
+        if uploaded_file is not None and st.button("📄 Parse Uploaded File", key="btn_parse_resume", use_container_width=True):
+            with st.status("Parsing resume file...", expanded=True) as status:
+                try:
+                    suffix = "." + uploaded_file.name.rsplit(".", 1)[-1]
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                        tmp.write(uploaded_file.getbuffer())
+                        tmp_path = tmp.name
+                    status.write(f"⏳ Parsing **{uploaded_file.name}**...")
+                    resume_schema = _parse_resume_sync(tmp_path)
+                    resume_json_str = json.dumps(resume_schema.model_dump(), ensure_ascii=False, indent=2)
+                    st.session_state["resume_data"] = resume_json_str
+                    name = resume_schema.personal_info.name if resume_schema.personal_info else "?"
+                    status.write(f"✅ Parsed resume for **{name}**")
+                    status.update(label="✅ Resume parsed", state="complete")
+                    st.rerun()
+                except Exception as e:
+                    status.update(label="❌ Resume parsing failed", state="error")
+                    st.error(f"Failed to parse resume: {e}")
+
+    st.markdown("")
+
+    # ── Summary Card ─────────────────────────────────────────────────
     jd_data = st.session_state["jd_data"]
     resume_data = st.session_state["resume_data"]
 

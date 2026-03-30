@@ -28,7 +28,7 @@ st.set_page_config(
 )
 
 # 사이드바 네비게이션
-from slayer.ui.views import dashboard, research, matching, optimize, cover_letter
+from slayer.ui.views import dashboard, research, matching, optimize, cover_letter, interview_prep
 
 pages = {
     "Dashboard": dashboard,
@@ -36,6 +36,7 @@ pages = {
     "JD-Resume Match": matching,
     "Resume Optimize": optimize,
     "Cover Letter": cover_letter,
+    "Interview Prep": interview_prep,
 }
 
 # 사이드바 네비 초기화
@@ -48,6 +49,7 @@ NAV_ITEMS = [
     ("📊", "JD-Resume Match"),
     ("✨", "Resume Optimize"),
     ("✍️", "Cover Letter"),
+    ("🎯", "Interview Prep"),
 ]
 
 with st.sidebar:
