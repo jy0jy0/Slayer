@@ -34,11 +34,8 @@ def get_cached_company_research(company_name: str) -> str:
         with get_session() as session:
             company = session.query(Company).filter_by(name=company_name).first()
             if company and company.researched_at:
-                age_days = (
-                    (datetime.now(company.researched_at.tzinfo) - company.researched_at).days
-                    if company.researched_at.tzinfo
-                    else (datetime.now() - company.researched_at).days
-                )
+                now = datetime.now(company.researched_at.tzinfo) if company.researched_at.tzinfo else datetime.now()
+                age_days = (now - company.researched_at).days
                 if age_days <= 7:
                     data = {
                         "company_name": company.name,
@@ -111,6 +108,8 @@ def validate_json_output(json_str: str, expected_schema_name: str) -> str:
 
     try:
         data = json.loads(json_str)
+        if not isinstance(data, dict):
+            return json.dumps({"is_valid": False, "errors": ["JSON output must be an object, not array or primitive"], "warnings": []})
     except (json.JSONDecodeError, TypeError) as e:
         return json.dumps({"is_valid": False, "errors": [f"Invalid JSON: {e}"], "warnings": []})
 
