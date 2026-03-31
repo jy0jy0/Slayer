@@ -62,3 +62,28 @@ Return JSON:
 ## Current Blocks
 {resume_blocks_json}"""
     return provider.generate_json(prompt, system_message="Resume optimization expert. JSON only.")
+
+
+@tool
+def analyze_optimization_impact(before_score: str, after_score: str, changes_json: str) -> str:
+    """Analyze which optimization changes had the most impact on ATS score.
+
+    Use after an optimize+re-evaluate cycle to understand what worked.
+
+    Args:
+        before_score: ATS score before optimization (e.g. "62.0")
+        after_score: ATS score after optimization (e.g. "71.0")
+        changes_json: JSON string of changes array from optimize_blocks
+
+    Returns:
+        JSON with score_delta, effective_changes, diminishing_returns (bool),
+        suggested_focus for next iteration, and confidence (0.0-1.0).
+    """
+    provider = get_default_provider()
+    prompt = f"""Analyze optimization impact.
+Before: {before_score}, After: {after_score}
+Changes: {changes_json}
+
+Return JSON:
+{{"score_delta": <number>, "effective_changes": ["..."], "diminishing_returns": true/false, "suggested_focus": "...", "confidence": 0.0-1.0}}"""
+    return provider.generate_json(prompt, system_message="ATS optimization analyst. JSON only.")
