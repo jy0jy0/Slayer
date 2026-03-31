@@ -10,38 +10,48 @@ import logging
 
 from langgraph.prebuilt import create_react_agent
 
-from slayer.agents.cover_letter.tools import compute_stats, generate_draft, review_and_refine
+from slayer.agents.cover_letter.tools import compute_stats, generate_draft, review_and_refine, evaluate_draft_quality
 from slayer.llm import get_chat_model
 from slayer.schemas import CoverLetterInput, CoverLetterOutput
 
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-You are a cover letter writing agent for Korean job seekers.
+You are a cover letter writing expert for Korean job seekers.
 
-## Tools
-- generate_draft: Generate initial cover letter from resume, JD, company research, and match result
-- review_and_refine: Review and improve a draft cover letter
-- compute_stats: Calculate word count and keyword coverage metrics
+## Goal
+Generate the best possible cover letter that maximizes the candidate's chances.
+You decide when the letter is good enough based on quality metrics.
 
-## Process
-1. Call generate_draft with all the provided data
-2. Review the draft quality — call review_and_refine if needed
-3. Call compute_stats to get final metrics
-4. If keyword coverage is below 50%, consider calling review_and_refine again
-5. Output the final result
+## Available tools
+- generate_draft: Create initial draft from resume, JD, company research, match result
+- review_and_refine: Improve an existing draft
+- compute_stats: Get word count and keyword coverage ratio
+- evaluate_draft_quality: Multi-dimensional quality assessment (keywords, tone, structure, specificity, company_alignment)
+
+## Your autonomy
+- Generate a draft, then assess its quality with evaluate_draft_quality
+- If any dimension scores below 70, refine with targeted improvements
+- Use compute_stats to verify keyword coverage (aim for 50%+)
+- You may refine multiple times, but stop when evaluate_draft_quality returns is_ready: true
+- If company research reveals key themes, ensure the letter references them
+
+## Quality standards
+- Length: 800-1200 characters (Korean)
+- Keyword coverage: >= 50% of JD skills mentioned naturally
+- All quality dimensions >= 70/100
 
 ## Final output
 Return JSON:
 {
-  "cover_letter": "final cover letter text",
-  "key_points": ["3-5 key selling points"],
+  "cover_letter": "final cover letter text in Korean",
+  "key_points": ["3-5 strategic selling points"],
   "jd_keyword_coverage": 0.0-1.0,
   "word_count": <number>
 }
 """
 
-TOOLS = [generate_draft, review_and_refine, compute_stats]
+TOOLS = [generate_draft, review_and_refine, compute_stats, evaluate_draft_quality]
 
 
 def build_cover_letter_agent():
@@ -64,6 +74,7 @@ TOOL_LABELS = {
     "generate_draft": ("📝", "Drafting cover letter"),
     "review_and_refine": ("🔍", "Reviewing & refining"),
     "compute_stats": ("📊", "Computing statistics"),
+    "evaluate_draft_quality": ("🎯", "Evaluating quality dimensions"),
 }
 
 
@@ -115,6 +126,15 @@ JD Skills (for stats): {skills_json}"""
                     summary = f"Coverage: {d.get('keyword_coverage', 0):.0%}, Words: {d.get('word_count', '?')}"
                 except (json.JSONDecodeError, TypeError):
                     summary = "Stats computed"
+            elif tool_name == "evaluate_draft_quality":
+                try:
+                    d = json.loads(output)
+                    score = d.get("overall_score", "?")
+                    ready = d.get("is_ready", False)
+                    weakest = d.get("weakest_dimension", "?")
+                    summary = f"Score: {score}/100, Ready: {ready}, Weakest: {weakest}"
+                except (json.JSONDecodeError, TypeError):
+                    summary = "Quality evaluated"
             else:
                 summary = output[:80]
             on_event("tool_result", {"tool": tool_name, "summary": summary})

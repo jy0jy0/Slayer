@@ -10,7 +10,7 @@ import logging
 
 from langgraph.prebuilt import create_react_agent
 
-from slayer.agents.resume_optimizer.tools import evaluate_ats, optimize_blocks
+from slayer.agents.resume_optimizer.tools import evaluate_ats, optimize_blocks, analyze_optimization_impact
 from slayer.llm import get_chat_model
 from slayer.schemas import (
     BlockChange,
@@ -24,37 +24,42 @@ from slayer.schemas import (
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-You are a resume optimization agent. Your goal is to improve the resume's ATS score to reach the target.
+You are a resume optimization expert for Korean job seekers.
 
-## Tools
-- evaluate_ats: Evaluate current ATS score of resume blocks against a JD
-- optimize_blocks: Apply optimization strategies to improve the blocks
+## Goal
+Improve the resume's ATS score from the current score to the target ({target_score}/100).
+Maximum {max_iterations} evaluation-optimization cycles allowed.
 
-## Process
-1. First, call evaluate_ats to get the current score
-2. If score < target, call optimize_blocks with the weaknesses and missing keywords from evaluation
-3. After optimization, call evaluate_ats again to check improvement
-4. Repeat until target score is reached or max iterations exhausted
-5. When done, output the final result as JSON
+## Available tools
+- evaluate_ats: Evaluate current ATS score of resume blocks against JD
+- optimize_blocks: Apply optimization strategies (keyword insertion, quantification, reordering)
+- analyze_optimization_impact: Analyze which changes had most impact and whether further optimization is worthwhile
 
-## Rules
-- Maximum {max_iterations} evaluation-optimization cycles
-- Target ATS score: {target_score}
-- Always evaluate before and after optimization
-- Stop when score >= target or iterations exhausted
+## Your autonomy
+You decide the strategy:
+- Evaluate first to understand gaps, then optimize targeted weaknesses
+- After optimization, re-evaluate using the OPTIMIZED blocks (not the original!)
+- Use impact analysis to refine your approach if improvement is insufficient
+- Stop early if target reached OR if diminishing returns detected
+- If a specific dimension (keywords, experience, etc.) is weak, focus optimization there
 
-## Final output (after finishing all iterations)
+## CRITICAL
+After calling optimize_blocks, use the returned optimized_blocks as input to the next evaluate_ats call.
+Do NOT re-evaluate the original blocks — that discards your optimization work.
+
+## Final output
 Return JSON:
 {{
   "final_ats_score": <number>,
   "score_improvement": <number>,
   "iterations_used": <number>,
-  "optimization_summary": "summary of what was done",
-  "changes": [list of changes made across all iterations]
+  "optimization_summary": "Korean summary of what was done and why",
+  "optimized_blocks": [<final optimized blocks>],
+  "changes": [<all changes across iterations>]
 }}
 """
 
-TOOLS = [evaluate_ats, optimize_blocks]
+TOOLS = [evaluate_ats, optimize_blocks, analyze_optimization_impact]
 
 
 def build_resume_optimizer_agent(target_score: float = 80, max_iterations: int = 3):
@@ -86,6 +91,7 @@ def _parse_final(content: str) -> str:
 TOOL_LABELS = {
     "evaluate_ats": ("📊", "Evaluating ATS score"),
     "optimize_blocks": ("✨", "Optimizing resume blocks"),
+    "analyze_optimization_impact": ("🔬", "Analyzing optimization impact"),
 }
 
 
@@ -157,11 +163,30 @@ JD JSON:
 
     try:
         data = json.loads(_parse_final(content))
+
+        # Parse optimized blocks from agent output
+        raw_blocks = data.get("optimized_blocks", None)
+        if raw_blocks and isinstance(raw_blocks, list):
+            try:
+                final_blocks = [ResumeBlock(**b) for b in raw_blocks]
+            except Exception:
+                final_blocks = blocks
+        else:
+            final_blocks = blocks
+
+        raw_changes = data.get("changes", [])
+        parsed_changes = []
+        for c in raw_changes:
+            try:
+                parsed_changes.append(BlockChange(**c))
+            except Exception:
+                continue
+
         return ResumeOptimizationOutput(
-            optimized_blocks=blocks,
+            optimized_blocks=final_blocks,
             final_ats_score=data.get("final_ats_score", input_data.match_result.ats_score),
             score_improvement=data.get("score_improvement", 0),
-            changes=[],
+            changes=parsed_changes,
             iterations_used=data.get("iterations_used", 1),
             optimization_summary=data.get("optimization_summary", ""),
         )
@@ -210,11 +235,30 @@ JD JSON: {jd_json}"""
             json_str = content[start:end]
 
         data = json.loads(json_str)
+
+        # Parse optimized blocks from agent output
+        raw_blocks = data.get("optimized_blocks", None)
+        if raw_blocks and isinstance(raw_blocks, list):
+            try:
+                final_blocks = [ResumeBlock(**b) for b in raw_blocks]
+            except Exception:
+                final_blocks = blocks
+        else:
+            final_blocks = blocks
+
+        raw_changes = data.get("changes", [])
+        parsed_changes = []
+        for c in raw_changes:
+            try:
+                parsed_changes.append(BlockChange(**c))
+            except Exception:
+                continue
+
         return ResumeOptimizationOutput(
-            optimized_blocks=blocks,  # keep original blocks structure
+            optimized_blocks=final_blocks,
             final_ats_score=data.get("final_ats_score", input_data.match_result.ats_score),
             score_improvement=data.get("score_improvement", 0),
-            changes=[],
+            changes=parsed_changes,
             iterations_used=data.get("iterations_used", 1),
             optimization_summary=data.get("optimization_summary", ""),
         )

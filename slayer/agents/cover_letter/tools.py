@@ -75,3 +75,30 @@ def compute_stats(cover_letter: str, jd_skills_json: str) -> str:
     matched = sum(1 for s in skills if s.lower() in letter_lower)
     coverage = min(matched / len(skills), 1.0)
     return json.dumps({"word_count": word_count, "keyword_coverage": round(coverage, 3)})
+
+
+@tool
+def evaluate_draft_quality(cover_letter: str, jd_json: str, company_json: str) -> str:
+    """Evaluate cover letter quality across multiple dimensions.
+
+    Use this to get detailed quality assessment and decide if refinement is needed.
+
+    Args:
+        cover_letter: The cover letter text
+        jd_json: JSON string of job description
+        company_json: JSON string of company research
+
+    Returns:
+        JSON with overall_score (0-100), dimensions (keyword_relevance, tone, structure,
+        specificity, company_alignment each 0-100), weakest_dimension, improvement_suggestions, is_ready (bool).
+    """
+    provider = get_default_provider()
+    prompt = f"""Evaluate this Korean cover letter across 5 dimensions.
+
+Return JSON:
+{{"overall_score": 0-100, "dimensions": {{"keyword_relevance": 0-100, "tone": 0-100, "structure": 0-100, "specificity": 0-100, "company_alignment": 0-100}}, "weakest_dimension": "...", "improvement_suggestions": ["..."], "is_ready": true/false}}
+
+## JD: {jd_json}
+## Company: {company_json}
+## Cover Letter: {cover_letter}"""
+    return provider.generate_json(prompt, system_message="Cover letter quality evaluator. JSON only.")

@@ -63,3 +63,43 @@ def get_financial_info(company_name: str, crno: str) -> str:
     source = FinancialInfoSource()
     result = asyncio.run(source.fetch(company_name, crno=crno))
     return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+@tool
+def validate_research_data(data_source: str, result_json: str) -> str:
+    """Validate whether collected research data is complete and usable.
+
+    Call after collecting data from a source to check quality.
+    This is a deterministic check (no LLM call, no cost).
+
+    Args:
+        data_source: Source name ("corp_info", "financial_info", "news")
+        result_json: Raw JSON string from the data collection tool
+
+    Returns:
+        JSON with is_valid, completeness_score (0-1), missing_fields, suggestions.
+    """
+    import json as _json
+    try:
+        data = _json.loads(result_json)
+    except (ValueError, TypeError):
+        return _json.dumps({"is_valid": False, "completeness_score": 0.0, "missing_fields": ["all"], "suggestions": "Invalid JSON. Retry the tool call."})
+
+    if data_source == "corp_info":
+        key_fields = ["corp_name", "ceo", "employee_count", "industry", "corp_reg_no"]
+        present = [f for f in key_fields if data.get(f)]
+        missing = [f for f in key_fields if not data.get(f)]
+        score = len(present) / len(key_fields)
+        return _json.dumps({"is_valid": score >= 0.4, "completeness_score": round(score, 2), "missing_fields": missing, "suggestions": "Proceed." if score >= 0.4 else "Data sparse. Try alternative name."})
+    elif data_source == "financial_info":
+        key_fields = ["revenue", "operating_profit", "net_income", "total_assets"]
+        present = [f for f in key_fields if data.get(f)]
+        missing = [f for f in key_fields if not data.get(f)]
+        score = len(present) / len(key_fields) if key_fields else 0
+        return _json.dumps({"is_valid": score >= 0.25, "completeness_score": round(score, 2), "missing_fields": missing, "suggestions": "Proceed." if score >= 0.25 else "Financial data unavailable. Skip."})
+    elif data_source == "news":
+        articles = data.get("articles", [])
+        score = min(len(articles) / 5, 1.0)
+        return _json.dumps({"is_valid": len(articles) > 0, "completeness_score": round(score, 2), "missing_fields": [] if articles else ["articles"], "suggestions": f"{len(articles)} articles." if articles else "No news. Proceed without."})
+    else:
+        return _json.dumps({"is_valid": bool(data), "completeness_score": 0.5, "missing_fields": [], "suggestions": "Unknown source."})
