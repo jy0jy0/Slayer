@@ -11,7 +11,7 @@ import logging
 from langgraph.prebuilt import create_react_agent
 
 from slayer.agents.cover_letter.tools import compute_stats, generate_draft, review_and_refine, evaluate_draft_quality
-from slayer.llm import get_chat_model
+from slayer.llm import get_chat_model, parse_agent_json
 from slayer.schemas import CoverLetterInput, CoverLetterOutput
 
 logger = logging.getLogger(__name__)
@@ -59,15 +59,6 @@ def build_cover_letter_agent():
     model = get_chat_model("gpt-4o-mini")
     return create_react_agent(model, TOOLS, prompt=SYSTEM_PROMPT)
 
-
-def _parse_final(content: str) -> str:
-    if "```json" in content:
-        return content.split("```json")[1].split("```")[0].strip()
-    if content.strip().startswith("{"):
-        return content.strip()
-    start = content.index("{")
-    end = content.rindex("}") + 1
-    return content[start:end]
 
 
 TOOL_LABELS = {
@@ -144,15 +135,22 @@ JD Skills (for stats): {skills_json}"""
                 content = output.content
 
     if not content:
-        result = await agent.ainvoke(input_msg)
-        final_message = result["messages"][-1]
-        content = final_message.content if hasattr(final_message, "content") else str(final_message)
+        try:
+            result = await agent.ainvoke(input_msg)
+            messages = result.get("messages", [])
+            if not messages:
+                raise ValueError("Agent produced no output")
+            final_message = messages[-1]
+            content = final_message.content if hasattr(final_message, "content") else str(final_message)
+        except Exception as e:
+            logger.error("Fallback invocation failed: %s", e)
+            content = ""
 
     if on_event:
         on_event("done", {"message": "Cover letter complete"})
 
     try:
-        data = json.loads(_parse_final(content))
+        data = json.loads(parse_agent_json(content))
         return CoverLetterOutput(
             cover_letter=data.get("cover_letter", ""),
             key_points=data.get("key_points", []),

@@ -19,7 +19,7 @@ from slayer.agents.company_research.tools import (
     search_news,
     validate_research_data,
 )
-from slayer.llm import get_chat_model
+from slayer.llm import get_chat_model, parse_agent_json
 from slayer.schemas import CompanyResearchOutput
 
 logger = logging.getLogger(__name__)
@@ -67,18 +67,6 @@ def build_company_research_agent():
     model = get_chat_model("gpt-4o-mini")
     return create_react_agent(model, TOOLS, prompt=SYSTEM_PROMPT)
 
-
-def _parse_final_content(content: str) -> str:
-    """Extract JSON string from LLM response."""
-    if "```json" in content:
-        return content.split("```json")[1].split("```")[0].strip()
-    if "```" in content:
-        return content.split("```")[1].split("```")[0].strip()
-    if content.strip().startswith("{"):
-        return content.strip()
-    start = content.index("{")
-    end = content.rindex("}") + 1
-    return content[start:end]
 
 
 async def run_company_research_streaming(company_name: str, on_event=None):
@@ -128,9 +116,16 @@ async def run_company_research_streaming(company_name: str, on_event=None):
 
     if not content:
         # Fallback: run non-streaming
-        result = await agent.ainvoke(input_msg)
-        final_message = result["messages"][-1]
-        content = final_message.content if hasattr(final_message, "content") else str(final_message)
+        try:
+            result = await agent.ainvoke(input_msg)
+            messages = result.get("messages", [])
+            if not messages:
+                raise ValueError("Agent produced no output")
+            final_message = messages[-1]
+            content = final_message.content if hasattr(final_message, "content") else str(final_message)
+        except Exception as e:
+            logger.error("Fallback invocation failed: %s", e)
+            content = ""
 
     if on_event:
         on_event("done", {"message": "Generating report..."})
@@ -138,7 +133,7 @@ async def run_company_research_streaming(company_name: str, on_event=None):
     logger.info("Agent completed. Parsing result...")
 
     try:
-        json_str = _parse_final_content(content)
+        json_str = parse_agent_json(content)
         data = json.loads(json_str)
         data["data_sources"] = ["naver_news", "corp_info", "financial_info"]
         data["researched_at"] = datetime.now().isoformat()
@@ -167,7 +162,7 @@ async def _run_company_research_invoke(company_name: str) -> CompanyResearchOutp
     final_message = result["messages"][-1]
     content = final_message.content if hasattr(final_message, "content") else str(final_message)
     try:
-        json_str = _parse_final_content(content)
+        json_str = parse_agent_json(content)
         data = json.loads(json_str)
         data["data_sources"] = ["naver_news", "corp_info", "financial_info"]
         data["researched_at"] = datetime.now().isoformat()

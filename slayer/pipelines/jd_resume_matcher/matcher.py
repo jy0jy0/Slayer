@@ -11,7 +11,7 @@ from typing import Callable, Optional
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 
-from slayer.llm import get_chat_model, get_default_provider
+from slayer.llm import get_chat_model, get_default_provider, parse_agent_json
 from slayer.schemas import JDSchema, MatchResult, ParsedResume
 
 logger = logging.getLogger(__name__)
@@ -173,15 +173,6 @@ def build_matcher_agent():
 # ═══════════════════════════════════════════════════
 
 
-def _parse_final(content: str) -> str:
-    """Extract JSON from agent response content."""
-    if "```json" in content:
-        return content.split("```json")[1].split("```")[0].strip()
-    if content.strip().startswith("{"):
-        return content.strip()
-    start = content.index("{")
-    end = content.rindex("}") + 1
-    return content[start:end]
 
 
 # ═══════════════════════════════════════════════════
@@ -269,15 +260,22 @@ Resume Experiences: {experiences_json}"""
                 content = output.content
 
     if not content:
-        result = await agent.ainvoke(input_msg)
-        final_message = result["messages"][-1]
-        content = final_message.content if hasattr(final_message, "content") else str(final_message)
+        try:
+            result = await agent.ainvoke(input_msg)
+            messages = result.get("messages", [])
+            if not messages:
+                raise ValueError("Agent produced no output")
+            final_message = messages[-1]
+            content = final_message.content if hasattr(final_message, "content") else str(final_message)
+        except Exception as e:
+            logger.error("Fallback invocation failed: %s", e)
+            content = ""
 
     if on_event:
         on_event("done", {"message": "Match analysis complete"})
 
     try:
-        data = json.loads(_parse_final(content))
+        data = json.loads(parse_agent_json(content))
         return MatchResult(
             ats_score=float(data.get("ats_score", 0)),
             score_breakdown=data.get("score_breakdown", {}),

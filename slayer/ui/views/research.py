@@ -2,7 +2,10 @@
 
 import asyncio
 import json
+import logging
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 from slayer.ui.styles import GLOBAL_CSS
 from slayer.ui.components import render_page_header, render_info_card, render_news_list
 
@@ -108,8 +111,8 @@ def _run_research_with_status(company_name: str, status_container):
             from slayer.db.repository import save_company, save_agent_log
             save_company(result)
             save_agent_log("company_research", "success", input_summary=company_name, output_summary=result.summary[:200] if result.summary else "")
-        except Exception:
-            pass  # DB failure should not block UI
+        except Exception as e:
+            logger.warning("DB save failed: %s", e)
         return result
     finally:
         loop.close()

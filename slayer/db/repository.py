@@ -109,12 +109,26 @@ def save_agent_log(
 @_safe_db_op
 def save_match_result(jd_json: str, resume_json: str, match_result) -> Any:
     """Save matching result. Stores JD, resume data, and ATS analysis."""
-    from slayer.db.models import Application
+    import json as _json
+    from slayer.db.models import Application, Company
+
     with get_session() as session:
+        # Try to find company from JD data
+        company_id = None
+        try:
+            jd_data = _json.loads(jd_json) if isinstance(jd_json, str) else jd_json
+            company_name = jd_data.get("company", "")
+            if company_name:
+                company = session.query(Company).filter_by(name=company_name).first()
+                if company:
+                    company_id = company.id
+        except Exception:
+            pass
+
         app = Application(
             id=uuid.uuid4(),
-            user_id=uuid.UUID('00000000-0000-0000-0000-000000000000'),  # placeholder
-            company_id=uuid.UUID('00000000-0000-0000-0000-000000000000'),  # placeholder
+            user_id=uuid.UUID('00000000-0000-0000-0000-000000000000'),  # still placeholder for user
+            company_id=company_id or uuid.UUID('00000000-0000-0000-0000-000000000000'),
             status='reviewing',
             ats_score=match_result.ats_score,
             score_breakdown=match_result.score_breakdown,

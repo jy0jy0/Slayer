@@ -1,8 +1,11 @@
 """Interview Prep page — generate tailored interview questions by category."""
 
 import json
+import logging
 import time
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 from slayer.ui.styles import GLOBAL_CSS
 from slayer.ui.components import render_page_header
 
@@ -100,8 +103,8 @@ def render():
                         output_summary=f"total_questions={len(result.questions)}, excluded={result.excluded_categories or []}, weak_areas={len(result.weak_areas) if result.weak_areas else 0}",
                         duration_ms=duration_ms,
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("DB save failed: %s", e)
             except Exception as e:
                 status.update(label="❌ Generation failed", state="error")
                 st.error(f"Generation failed: {e}")
@@ -113,8 +116,8 @@ def render():
                         status="failed",
                         error_message=str(e)[:500],
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("DB save failed: %s", e)
                 return
 
     if "interview_result" not in st.session_state:
