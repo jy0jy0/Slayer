@@ -76,3 +76,40 @@ def get_chat_model(model: str = "gpt-4o-mini"):
     if not OPENAI_API_KEY:
         raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
     return ChatOpenAI(model=model, api_key=OPENAI_API_KEY)
+
+
+def parse_agent_json(content: str) -> str:
+    """Extract JSON string from LLM agent response.
+
+    Handles: ```json blocks, raw JSON, and JSON embedded in text.
+    Raises ValueError if no valid JSON found.
+    """
+    if not content or not isinstance(content, str):
+        raise ValueError("Empty or non-string content")
+    content = content.strip()
+    # Try ```json block first
+    if "```json" in content:
+        parts = content.split("```json")
+        if len(parts) >= 2:
+            json_part = parts[1].split("```")[0].strip()
+            if json_part:
+                return json_part
+    # Try ```  block
+    if "```" in content:
+        parts = content.split("```")
+        if len(parts) >= 3:
+            json_part = parts[1].strip()
+            if json_part.startswith("{"):
+                return json_part
+    # Try raw JSON
+    if content.startswith("{"):
+        return content
+    # Try finding JSON in text
+    if "{" not in content or "}" not in content:
+        raise ValueError("No JSON object found in response")
+    try:
+        start = content.index("{")
+        end = content.rindex("}") + 1
+        return content[start:end]
+    except ValueError:
+        raise ValueError("Failed to extract JSON boundaries")

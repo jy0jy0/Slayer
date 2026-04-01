@@ -11,7 +11,7 @@ import logging
 from langgraph.prebuilt import create_react_agent
 
 from slayer.agents.resume_optimizer.tools import evaluate_ats, optimize_blocks, analyze_optimization_impact
-from slayer.llm import get_chat_model
+from slayer.llm import get_chat_model, parse_agent_json
 from slayer.schemas import (
     BlockChange,
     BlockType,
@@ -77,15 +77,6 @@ def should_continue(state) -> str:
         return "done"
     return "continue"
 
-
-def _parse_final(content: str) -> str:
-    if "```json" in content:
-        return content.split("```json")[1].split("```")[0].strip()
-    if content.strip().startswith("{"):
-        return content.strip()
-    start = content.index("{")
-    end = content.rindex("}") + 1
-    return content[start:end]
 
 
 TOOL_LABELS = {
@@ -154,25 +145,38 @@ JD JSON:
                 content = output.content
 
     if not content:
-        result = await agent.ainvoke(input_msg)
-        final_message = result["messages"][-1]
-        content = final_message.content if hasattr(final_message, "content") else str(final_message)
+        try:
+            result = await agent.ainvoke(input_msg)
+            messages = result.get("messages", [])
+            if not messages:
+                raise ValueError("Agent produced no output")
+            final_message = messages[-1]
+            content = final_message.content if hasattr(final_message, "content") else str(final_message)
+        except Exception as e:
+            logger.error("Fallback invocation failed: %s", e)
+            content = ""
 
     if on_event:
         on_event("done", {"message": "Optimization complete"})
 
     try:
-        data = json.loads(_parse_final(content))
+        data = json.loads(parse_agent_json(content))
 
         # Parse optimized blocks from agent output
-        raw_blocks = data.get("optimized_blocks", None)
-        if raw_blocks and isinstance(raw_blocks, list):
+        raw_blocks = data.get("optimized_blocks")
+        if not raw_blocks:
+            logger.warning("No optimized_blocks in agent output — using original blocks")
+            final_blocks = blocks
+        elif not isinstance(raw_blocks, list):
+            logger.warning("optimized_blocks is not a list (%s) — using original blocks", type(raw_blocks))
+            final_blocks = blocks
+        else:
             try:
                 final_blocks = [ResumeBlock(**b) for b in raw_blocks]
-            except Exception:
+                logger.info("Parsed %d optimized blocks from agent output", len(final_blocks))
+            except Exception as e:
+                logger.warning("Failed to parse optimized blocks: %s — using original", e)
                 final_blocks = blocks
-        else:
-            final_blocks = blocks
 
         raw_changes = data.get("changes", [])
         parsed_changes = []
@@ -225,26 +229,23 @@ JD JSON: {jd_json}"""
     content = final_message.content if hasattr(final_message, "content") else str(final_message)
 
     try:
-        if "```json" in content:
-            json_str = content.split("```json")[1].split("```")[0].strip()
-        elif content.strip().startswith("{"):
-            json_str = content.strip()
-        else:
-            start = content.index("{")
-            end = content.rindex("}") + 1
-            json_str = content[start:end]
-
-        data = json.loads(json_str)
+        data = json.loads(parse_agent_json(content))
 
         # Parse optimized blocks from agent output
-        raw_blocks = data.get("optimized_blocks", None)
-        if raw_blocks and isinstance(raw_blocks, list):
+        raw_blocks = data.get("optimized_blocks")
+        if not raw_blocks:
+            logger.warning("No optimized_blocks in agent output — using original blocks")
+            final_blocks = blocks
+        elif not isinstance(raw_blocks, list):
+            logger.warning("optimized_blocks is not a list (%s) — using original blocks", type(raw_blocks))
+            final_blocks = blocks
+        else:
             try:
                 final_blocks = [ResumeBlock(**b) for b in raw_blocks]
-            except Exception:
+                logger.info("Parsed %d optimized blocks from agent output", len(final_blocks))
+            except Exception as e:
+                logger.warning("Failed to parse optimized blocks: %s — using original", e)
                 final_blocks = blocks
-        else:
-            final_blocks = blocks
 
         raw_changes = data.get("changes", [])
         parsed_changes = []

@@ -2,8 +2,11 @@
 
 import asyncio
 import json
+import logging
 import time
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 from slayer.ui.styles import GLOBAL_CSS
 from slayer.ui.components import render_page_header, render_change_list
 
@@ -113,21 +116,24 @@ def render():
                 st.session_state["optimization_result"] = result
                 st.session_state["optimization_initial_score"] = match_result.ats_score
 
-                # Update resume_data with optimized version so downstream pages use it
+                # Update resume_data with optimized version
                 if result.optimized_blocks:
                     try:
-                        optimized_resume = resume.model_copy()
-                        # Apply optimized blocks back to resume fields
+                        # Convert optimized blocks back to a serializable format
+                        optimized_data = resume.model_dump()
                         for block in result.optimized_blocks:
-                            field = block.get("field") or block.get("section")
-                            value = block.get("optimized") or block.get("value")
-                            if field and value and hasattr(optimized_resume, field):
-                                setattr(optimized_resume, field, value)
-                        optimized_json = json.dumps(optimized_resume.model_dump(), ensure_ascii=False, indent=2)
-                        st.session_state["resume_data"] = optimized_json
+                            bt = block.block_type.value if hasattr(block, 'block_type') else (block.get('block_type') if isinstance(block, dict) else None)
+                            content = block.content if hasattr(block, 'content') else (block.get('content') if isinstance(block, dict) else None)
+                            if bt and content:
+                                # Map block types to resume fields
+                                if bt == "summary" and isinstance(content, dict):
+                                    optimized_data["summary"] = content.get("text", optimized_data.get("summary"))
+                                elif bt == "skills" and isinstance(content, dict):
+                                    optimized_data["skills"] = content.get("items", optimized_data.get("skills", []))
+                        st.session_state["resume_data"] = json.dumps(optimized_data, ensure_ascii=False, indent=2)
                         st.session_state["resume_source"] = "optimized"
-                    except Exception:
-                        pass  # Keep original resume_data if conversion fails
+                    except Exception as e:
+                        logger.warning("Failed to convert optimized blocks to resume: %s", e)
 
                 # DB save (non-blocking)
                 duration_ms = int((time.time() - t_start) * 1000)
@@ -140,8 +146,8 @@ def render():
                         output_summary=f"final_score={result.final_ats_score:.0f}, improvement={result.score_improvement:+.0f}, iterations={result.iterations_used}",
                         duration_ms=duration_ms,
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("DB save failed: %s", e)
             except Exception as e:
                 status.update(label="❌ Optimization failed", state="error")
                 st.error(f"Optimization failed: {e}")
@@ -154,8 +160,8 @@ def render():
                         input_summary=f"target={target_score}, max_iter={max_iter}",
                         error_message=str(e)[:500],
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("DB save failed: %s", e)
                 return
 
     if "optimization_result" not in st.session_state:
