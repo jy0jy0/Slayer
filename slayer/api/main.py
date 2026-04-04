@@ -6,7 +6,7 @@ import logging
 
 from fastapi import FastAPI
 
-from slayer.api.routes import applications, health, resumes
+from slayer.api.routes import applications, auth, health, resumes
 
 
 def create_app() -> FastAPI:
@@ -20,6 +20,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(resumes.router, prefix="/api/v1")
     app.include_router(applications.router, prefix="/api/v1")
+    app.include_router(auth.router, prefix="/api/v1")
     return app
 
 
