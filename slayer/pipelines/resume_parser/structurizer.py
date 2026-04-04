@@ -3,7 +3,7 @@
 GOOGLE_API_KEY → Gemini 2.5 Flash
 OPENAI_API_KEY → GPT-4o-mini (fallback)
 
-공유 클라이언트: slayer.services.llm_client
+공유 클라이언트: slayer.pipelines.resume_parser.llm_client
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from datetime import date
 
 from slayer.pipelines.resume_parser.file_detector import ResumeLLMError
 from slayer.schemas import ExperienceItem, ParsedResume
-from slayer.services.llm_client import generate_structured
+from slayer.pipelines.resume_parser.llm_client import generate_structured
 
 _SYSTEM_PROMPT = """\
 You are an expert resume parser. Extract structured information from the resume text below.

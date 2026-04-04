@@ -1,14 +1,12 @@
-"""공유 LLM 클라이언트 — Gemini / OpenAI 자동 fallback.
+"""이력서 파서 LLM 클라이언트 — Gemini / OpenAI 선택 및 fallback.
 
-우선순위:
-  1. GOOGLE_API_KEY  → Gemini 2.5 Flash
-  2. OPENAI_API_KEY  → GPT-4o-mini
+우선순위 결정 (SLAYER_PARSER_LLM 환경변수):
+  SLAYER_PARSER_LLM=gemini  → Gemini 2.5 Flash 고정
+  SLAYER_PARSER_LLM=openai  → GPT-4o-mini 고정
+  미설정                    → API 키 자동 감지 (GOOGLE_API_KEY 있으면 Gemini, 없으면 OpenAI)
 
 사용 예시:
-    from slayer.services.llm_client import generate_json, generate_structured
-
-    # JSON 응답 (스키마 없이)
-    result = generate_json(prompt="기업 리포트 작성", data=raw_data)
+    from slayer.pipelines.resume_parser.llm_client import generate_json, generate_structured
 
     # Pydantic 스키마 기반 structured output
     from slayer.schemas import ParsedResume
@@ -19,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any, Type, TypeVar
 
 from pydantic import BaseModel
@@ -32,6 +31,9 @@ _OPENAI_MODEL = "gpt-4o-mini"
 
 T = TypeVar("T", bound=BaseModel)
 
+# "gemini" | "openai" | "" (자동 감지)
+_PARSER_LLM = os.environ.get("SLAYER_PARSER_LLM", "").lower().strip()
+
 
 def _check_keys() -> None:
     if not GOOGLE_API_KEY and not OPENAI_API_KEY:
@@ -42,6 +44,16 @@ def _check_keys() -> None:
 
 
 def _using_gemini() -> bool:
+    """사용할 LLM 결정.
+
+    SLAYER_PARSER_LLM으로 선호 LLM 설정 가능.
+    설정한 LLM의 키가 없으면 자동으로 반대쪽으로 fallback.
+    """
+    if _PARSER_LLM == "gemini":
+        return bool(GOOGLE_API_KEY) or not bool(OPENAI_API_KEY)
+    if _PARSER_LLM == "openai":
+        return not bool(OPENAI_API_KEY) and bool(GOOGLE_API_KEY)
+    # 미설정: GOOGLE_API_KEY 있으면 Gemini, 없으면 OpenAI
     return bool(GOOGLE_API_KEY)
 
 
