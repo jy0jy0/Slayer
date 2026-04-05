@@ -1,0 +1,116 @@
+{
+  "name": "이서연",
+  "contact": {
+    "email": "seoyeon.sample@example.com",
+    "phone": "010-0000-0002",
+    "github": "https://github.com/example/seoyeon-ml",
+    "scholar": "https://scholar.google.com/citations?user=example_seoyeon"
+  },
+  "birth_year": 1999,
+  "summary": "컴퓨터 비전 및 자연어 처리 분야에서 3년간 연구/개발 경험을 보유한 ML 엔지니어입니다. 대규모 추천 시스템 고도화와 OCR 파이프라인 구축을 리드했으며, 논문 2편 발표 이력이 있습니다.",
+  "experience": [
+    {
+      "company": "비바리퍼블리카 (토스)",
+      "team": "AI Lab",
+      "position": "ML Engineer",
+      "period": "2024.07 ~ 현재",
+      "is_current": true,
+      "description": "금융 도메인 특화 NLP 모델 개발 및 서빙 인프라 구축"
+    },
+    {
+      "company": "카카오브레인",
+      "team": "Vision AI팀",
+      "position": "ML Engineer",
+      "period": "2023.01 ~ 2024.06",
+      "is_current": false,
+      "description": "이미지 기반 콘텐츠 추천 시스템 및 OCR 모델 개발"
+    }
+  ],
+  "projects": [
+    {
+      "title": "금융 문서 자동 분류 시스템",
+      "company": "비바리퍼블리카 (토스)",
+      "period": "2024.07 ~ 현재",
+      "role": "모델 개발 리드",
+      "description": "보험 청구서, 계약서, 영수증 등 금융 문서를 자동으로 분류하고 핵심 정보를 추출하는 시스템. BERT 기반 문서 분류 모델과 Named Entity Recognition(NER) 파이프라인을 설계했습니다.",
+      "tech_stack": ["Python", "PyTorch", "Transformers", "FastAPI", "Docker", "AWS SageMaker"],
+      "achievements": [
+        "문서 분류 정확도 94.2% 달성 (기존 규칙 기반 78%)",
+        "추론 시간 평균 120ms 이내 (SLA 200ms 대비 40% 여유)",
+        "일 평균 15,000건 문서 처리"
+      ]
+    },
+    {
+      "title": "추천 시스템 고도화 (이미지 기반)",
+      "company": "카카오브레인",
+      "period": "2023.06 ~ 2024.03",
+      "role": "모델 개발",
+      "description": "카카오 커머스 내 상품 이미지 유사도 기반 추천 시스템. 기존 텍스트 메타데이터 기반에서 이미지 임베딩 기반으로 전환하여 콜드 스타트 문제를 해결했습니다.",
+      "tech_stack": ["Python", "PyTorch", "CLIP", "Faiss", "Airflow", "MLflow"],
+      "achievements": [
+        "추천 CTR 12% → 18.5%로 개선 (54% 향상)",
+        "콜드 스타트 상품 추천 커버리지 0% → 85%",
+        "임베딩 인덱스 업데이트 주기 일 1회 → 실시간 (Kafka 연동)"
+      ]
+    },
+    {
+      "title": "OCR 파이프라인 구축",
+      "company": "카카오브레인",
+      "period": "2023.01 ~ 2023.05",
+      "role": "파이프라인 설계 및 개발",
+      "description": "스캔된 문서에서 텍스트를 추출하는 OCR 파이프라인. 한국어 특화 전처리와 후보정 로직을 포함하며, 다양한 문서 레이아웃에 대응할 수 있는 구조를 설계했습니다.",
+      "tech_stack": ["Python", "PaddleOCR", "OpenCV", "FastAPI", "Docker", "GCP"],
+      "achievements": [
+        "한국어 OCR 정확도 91.3% 달성 (상용 API 대비 동등 수준, 비용 80% 절감)",
+        "월 30만 건 문서 처리 파이프라인 안정 운영",
+        "문서 레이아웃 분석 모듈 추가로 표/양식 데이터 추출 지원"
+      ]
+    }
+  ],
+  "education": [
+    {
+      "school": "KAIST",
+      "department": "전산학부",
+      "degree": "석사",
+      "period": "2021.03 ~ 2023.02",
+      "thesis": "Cross-lingual Transfer Learning for Low-resource Korean NER",
+      "gpa": "4.12 / 4.3"
+    },
+    {
+      "school": "서울대학교",
+      "department": "컴퓨터공학부",
+      "degree": "학사",
+      "period": "2017.03 ~ 2021.02",
+      "gpa": "3.85 / 4.3"
+    }
+  ],
+  "skills": {
+    "languages": ["Python", "C++"],
+    "ml_frameworks": ["PyTorch", "TensorFlow", "Hugging Face Transformers", "scikit-learn"],
+    "mlops": ["MLflow", "Airflow", "AWS SageMaker", "Docker", "Kubernetes"],
+    "data": ["Faiss", "Elasticsearch", "PostgreSQL", "Redis", "Kafka"],
+    "etc": ["Git", "Linux", "LaTeX"]
+  },
+  "publications": [
+    {
+      "title": "Cross-lingual Transfer Learning for Low-resource Korean NER",
+      "venue": "ACL 2023 Findings",
+      "authors": "Seoyeon Lee, et al.",
+      "year": 2023
+    },
+    {
+      "title": "Image-based Product Recommendation with CLIP Embeddings",
+      "venue": "RecSys 2024 Workshop",
+      "authors": "Seoyeon Lee, Minjun Park, et al.",
+      "year": 2024
+    }
+  ],
+  "certifications": [],
+  "awards": [
+    {
+      "title": "카카오브레인 사내 해커톤 대상",
+      "year": 2023,
+      "description": "실시간 이미지 검색 프로토타입 개발"
+    }
+  ]
+}

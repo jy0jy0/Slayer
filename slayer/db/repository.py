@@ -141,3 +141,127 @@ def save_match_result(jd_json: str, resume_json: str, match_result) -> Any:
         session.add(app)
         logger.info("Saved match result: ATS %.0f", match_result.ats_score)
         return app
+
+
+@_safe_db_op
+def save_parsed_resume(
+    user_id: str,
+    file_name: str,
+    file_type: str,
+    file_url: str,
+    parsed_resume,
+) -> Any:
+    """이력서 파싱 결과를 resumes 테이블에 저장."""
+    from slayer.db.models import Resume
+
+    with get_session() as session:
+        resume = Resume(
+            id=uuid.uuid4(),
+            user_id=uuid.UUID(user_id),
+            file_name=file_name,
+            file_type=file_type,
+            source_format=parsed_resume.source_format,
+            file_url=file_url,
+            parse_status="completed",
+            parsed_data=parsed_resume.model_dump(),
+        )
+        session.add(resume)
+        logger.info("Saved parsed resume: %s", file_name)
+        return resume
+
+
+def save_application(req, company_id: uuid.UUID | None, application_id: uuid.UUID | None = None) -> tuple[uuid.UUID, datetime] | None:
+    """applications 테이블에 지원 건 INSERT + status_history 기록.
+
+    Returns:
+        (application_id, applied_at) 튜플. DB 없으면 None.
+    """
+    if not is_db_available():
+        logger.debug("DB not available — skipping save_application")
+        return None
+    try:
+        from datetime import date as _date
+        from slayer.db.models import Application, StatusHistory
+
+        app_id = application_id or uuid.uuid4()
+        now = datetime.now()
+        _placeholder = uuid.UUID('00000000-0000-0000-0000-000000000000')
+
+        with get_session() as session:
+            app = Application(
+                id=app_id,
+                user_id=uuid.UUID(req.user_id),
+                company_id=company_id or _placeholder,
+                job_posting_id=uuid.UUID(req.job_posting_id) if req.job_posting_id else None,
+                resume_id=uuid.UUID(req.resume_id) if req.resume_id else None,
+                status="applied",
+                ats_score=req.ats_score,
+                matched_keywords=req.matched_keywords or [],
+                missing_keywords=req.missing_keywords or [],
+                gap_summary=req.gap_summary,
+                optimized_resume_url=req.optimized_resume_url,
+                cover_letter_text=req.cover_letter,
+                applied_at=now,
+                deadline=_date.fromisoformat(req.deadline) if req.deadline else None,
+            )
+            session.add(app)
+            session.add(StatusHistory(
+                id=uuid.uuid4(),
+                user_id=uuid.UUID(req.user_id),
+                application_id=app_id,
+                previous_status="reviewing",
+                new_status="applied",
+                trigger_type="apply_action",
+                triggered_by="apply_pipeline",
+            ))
+            logger.info("Saved application: %s @ %s", req.position, req.company_name)
+            return app_id, now
+    except Exception as e:
+        logger.warning("DB operation save_application failed: %s", e)
+        return None
+
+
+@_safe_db_op
+def upsert_company_by_name(company_name: str) -> uuid.UUID | None:
+    """company_name으로 기업 조회, 없으면 최소 정보로 INSERT. UUID 반환."""
+    from slayer.db.models import Company
+
+    with get_session() as session:
+        existing = session.query(Company).filter_by(name=company_name).first()
+        if existing:
+            return existing.id
+        company_id = uuid.uuid4()
+        session.add(Company(id=company_id, name=company_name))
+        logger.info("Created company placeholder: %s", company_name)
+        return company_id
+
+
+@_safe_db_op
+def save_calendar_event(
+    user_id: str,
+    application_id: uuid.UUID,
+    event_type: str,
+    title: str,
+    start_datetime: datetime,
+    end_datetime: datetime | None = None,
+    google_event_id: str | None = None,
+    sync_status: str = "pending",
+) -> Any:
+    """calendar_events 테이블에 일정 저장."""
+    from slayer.db.models import CalendarEvent
+
+    with get_session() as session:
+        event = CalendarEvent(
+            id=uuid.uuid4(),
+            user_id=uuid.UUID(user_id),
+            application_id=application_id,
+            google_event_id=google_event_id,
+            event_type=event_type,
+            title=title,
+            start_datetime=start_datetime,
+            end_datetime=end_datetime,
+            sync_status=sync_status,
+        )
+        session.add(event)
+        logger.info("Saved calendar event: %s (%s)", title, event_type)
+        return event

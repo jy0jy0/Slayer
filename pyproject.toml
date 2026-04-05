@@ -29,6 +29,9 @@ dependencies = [
     # UI
     "streamlit>=1.40.0",
     "plotly>=6.0.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    "python-multipart>=0.0.9",
 ]
 
 [build-system]
@@ -42,3 +45,7 @@ slayer = "slayer.pipelines.jd_parser.cli:main"
 dev = [
     "pytest>=9.0.2",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
