@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any, Callable, Optional
 
 from langgraph.prebuilt import create_react_agent
 
@@ -20,8 +21,12 @@ from slayer.schemas import (
     ResumeOptimizationOutput,
     parsed_resume_to_blocks,
 )
+from slayer.ui.events import EventType
 
 logger = logging.getLogger(__name__)
+
+# Applied at every ainvoke/astream_events call to cap ReAct loop length.
+RUNTIME_CONFIG = {"recursion_limit": 15}
 
 SYSTEM_PROMPT = """\
 You are a resume optimization expert for Korean job seekers.
@@ -86,7 +91,10 @@ TOOL_LABELS = {
 }
 
 
-async def optimize_resume_streaming(input_data: ResumeOptimizationInput, on_event=None) -> ResumeOptimizationOutput:
+async def optimize_resume_streaming(
+    input_data: ResumeOptimizationInput,
+    on_event: Optional[Callable[[EventType, dict[str, Any]], None]] = None,
+) -> ResumeOptimizationOutput:
     """Run resume optimization agent with streaming events."""
     logger.info("Resume optimizer agent started (target=%.0f, max_iter=%d)",
                 input_data.target_ats_score, input_data.max_iterations)
@@ -112,14 +120,14 @@ JD JSON:
     input_msg = {"messages": [{"role": "user", "content": user_msg}]}
     content = ""
 
-    async for event in agent.astream_events(input_msg, version="v2"):
+    async for event in agent.astream_events(input_msg, version="v2", config=RUNTIME_CONFIG):
         kind = event.get("event", "")
         if kind == "on_chat_model_start" and on_event:
-            on_event("thinking", {"message": "Agent deciding next action..."})
+            on_event(EventType.THINKING, {"message": "Agent deciding next action..."})
         elif kind == "on_tool_start" and on_event:
             tool_name = event.get("name", "")
             icon, label = TOOL_LABELS.get(tool_name, ("🔧", tool_name))
-            on_event("tool_call", {"tool": tool_name, "icon": icon, "label": label})
+            on_event(EventType.TOOL_CALL, {"tool": tool_name, "icon": icon, "label": label})
         elif kind == "on_tool_end" and on_event:
             tool_name = event.get("name", "")
             output = str(event.get("data", {}).get("output", ""))
@@ -138,7 +146,7 @@ JD JSON:
                     summary = f"{len(changes)} changes applied"
                 except (json.JSONDecodeError, TypeError):
                     summary = output[:80]
-            on_event("tool_result", {"tool": tool_name, "summary": summary})
+            on_event(EventType.TOOL_RESULT, {"tool": tool_name, "summary": summary})
         elif kind == "on_chat_model_end":
             output = event.get("data", {}).get("output", None)
             if output and hasattr(output, "content") and output.content:
@@ -146,7 +154,7 @@ JD JSON:
 
     if not content:
         try:
-            result = await agent.ainvoke(input_msg)
+            result = await agent.ainvoke(input_msg, config=RUNTIME_CONFIG)
             messages = result.get("messages", [])
             if not messages:
                 raise ValueError("Agent produced no output")
@@ -157,7 +165,7 @@ JD JSON:
             content = ""
 
     if on_event:
-        on_event("done", {"message": "Optimization complete"})
+        on_event(EventType.DONE, {"message": "Optimization complete"})
 
     try:
         data = json.loads(parse_agent_json(content))
@@ -223,7 +231,10 @@ Missing keywords: {json.dumps(input_data.match_result.missing_keywords, ensure_a
 Resume blocks JSON: {blocks_json}
 JD JSON: {jd_json}"""
 
-    result = await agent.ainvoke({"messages": [{"role": "user", "content": user_msg}]})
+    result = await agent.ainvoke(
+        {"messages": [{"role": "user", "content": user_msg}]},
+        config=RUNTIME_CONFIG,
+    )
 
     final_message = result["messages"][-1]
     content = final_message.content if hasattr(final_message, "content") else str(final_message)

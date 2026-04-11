@@ -1,7 +1,7 @@
-"""기업 리서치 오케스트레이터.
+"""Company research orchestrator.
 
-담당: 지호
-마이그레이션: feat/company-research 에서 이동
+Owner: Jiho
+Migration: moved from feat/company-research branch.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ def _safe_filename(name: str) -> str:
 
 
 async def _collect_data(company_name: str) -> dict:
-    """세 소스에서 비동기로 데이터를 수집한다."""
+    """Collect data concurrently from the three sources."""
     news_source = NaverNewsSource()
     corp_source = CorpInfoSource()
     financial_source = FinancialInfoSource()
@@ -46,7 +46,7 @@ async def _collect_data(company_name: str) -> dict:
 
     news_data, corp_data = await asyncio.gather(news_task, corp_task)
 
-    # 재무정보는 법인등록번호가 필요하므로 corp_info 이후 호출
+    # Financial lookup requires the corp registration number, so run after corp_info.
     crno = corp_data.get("corp_reg_no", "")
     financial_data: dict = {}
     if crno:
@@ -62,7 +62,7 @@ async def _collect_data(company_name: str) -> dict:
 def _save_result(
     company_name: str, result: dict, output_path: str | None = None
 ) -> str:
-    """결과를 JSON 파일로 저장한다."""
+    """Persist the result to a JSON file."""
     if output_path:
         path = Path(output_path)
     else:
@@ -79,7 +79,7 @@ def _save_result(
 
 
 def _dict_to_schema(result: dict) -> CompanyResearchOutput:
-    """LLM 합성 결과 dict를 CompanyResearchOutput 스키마로 변환한다."""
+    """Convert the LLM synthesis result dict into a CompanyResearchOutput schema."""
     bi = result.get("basic_info") or {}
     fi = result.get("financial_info")
     news_raw = result.get("recent_news") or []
@@ -110,8 +110,8 @@ async def research(
     output_path: str | None = None,
     use_llm: bool = True,
 ) -> CompanyResearchOutput:
-    """기업 리서치를 실행하고 결과를 반환한다."""
-    logger.info("기업 리서치 시작: %s", company_name)
+    """Run company research and return the result."""
+    logger.info("Company research started: %s", company_name)
     raw_data = await _collect_data(company_name)
 
     data_sources: list[str] = []
@@ -123,7 +123,7 @@ async def research(
         data_sources.append("financial_info")
 
     if not data_sources:
-        logger.warning("수집된 데이터 없음: %s", company_name)
+        logger.warning("No data collected: %s", company_name)
         return CompanyResearchOutput(
             company_name=company_name,
             summary="데이터를 수집할 수 없습니다.",

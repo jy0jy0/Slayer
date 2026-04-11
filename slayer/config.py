@@ -1,8 +1,8 @@
-"""공통 설정 — API 키, 모델명, DB URL.
+"""Shared settings — API keys, model names, DB URL.
 
-DRAFT - 팀 리뷰 후 확정
+DRAFT - pending team review.
 
-각 모듈별 고유 설정은 해당 모듈 안에 둡니다.
+Module-specific settings live inside each module.
 """
 
 from __future__ import annotations
@@ -20,21 +20,21 @@ OPENAI_MODEL = "gpt-4o-mini"
 # ── Google (Gemini + OAuth) ───────────────────────────────
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 
-# ── 네이버 뉴스 검색 API ─────────────────────────────────
+# ── Naver News Search API ────────────────────────────────
 NAVER_CLIENT_ID = os.environ.get("NAVER_CLIENT_ID", "")
 NAVER_CLIENT_SECRET = os.environ.get("NAVER_CLIENT_SECRET", "")
 NAVER_NEWS_URL = "https://openapi.naver.com/v1/search/news.json"
 
-# ── 공공데이터 포털 ──────────────────────────────────────
+# ── Korea Public Data Portal ─────────────────────────────
 DATA_GO_KR_API_KEY = os.environ.get("DATA_GO_KR_API_KEY", "")
 
-# 금융위원회 기업기본정보
+# Korea FSC (Financial Services Commission) corporate outline API
 CORP_OUTLINE_URL = (
     "https://apis.data.go.kr/1160100/service/"
     "GetCorpBasicInfoService_V2/getCorpOutline_V2"
 )
 
-# 금융위원회 기업 재무정보 (요약재무제표)
+# Korea FSC financial summary API (summary financial statements)
 FINANCIAL_SUMMARY_URL = (
     "https://apis.data.go.kr/1160100/service/"
     "GetFinaStatInfoService_V2/getSummFinaStat_V2"
