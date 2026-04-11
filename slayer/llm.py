@@ -11,6 +11,8 @@ Example:
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
 import os
 import random
@@ -81,19 +83,56 @@ def retry_on_transient_errors(
         max_delay: Upper bound on any single delay.
     """
 
+    def _classify(exc: Exception) -> bool:
+        """Return True if the exception is retryable, False to propagate immediately."""
+        if isinstance(exc, _RETRYABLE_NETWORK_ERRORS):
+            return True
+        if isinstance(exc, APIStatusError):
+            return _is_retryable_status(exc)
+        return False
+
+    def _compute_delay(attempt: int) -> float:
+        delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
+        return delay + random.uniform(0, delay * 0.1)
+
     def decorator(fn: Callable) -> Callable:
+        if inspect.iscoroutinefunction(fn):
+
+            @wraps(fn)
+            async def async_wrapper(*args, **kwargs):
+                last_exc: Optional[Exception] = None
+                for attempt in range(1, max_attempts + 1):
+                    try:
+                        return await fn(*args, **kwargs)
+                    except Exception as e:
+                        if not _classify(e):
+                            raise
+                        last_exc = e
+
+                    if attempt == max_attempts:
+                        logger.error(
+                            "LLM call failed after %d attempts: %s", attempt, last_exc
+                        )
+                        raise last_exc  # type: ignore[misc]
+                    delay = _compute_delay(attempt)
+                    logger.warning(
+                        "LLM call attempt %d failed (%s); retrying in %.1fs",
+                        attempt,
+                        type(last_exc).__name__,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+
+            return async_wrapper
+
         @wraps(fn)
-        def wrapper(*args, **kwargs):
+        def sync_wrapper(*args, **kwargs):
             last_exc: Optional[Exception] = None
             for attempt in range(1, max_attempts + 1):
                 try:
                     return fn(*args, **kwargs)
-                except _RETRYABLE_NETWORK_ERRORS as e:
-                    last_exc = e
-                    # Always retry pure network / timeout errors.
-                except APIStatusError as e:
-                    if not _is_retryable_status(e):
-                        # Permanent 4xx — propagate without retry.
+                except Exception as e:
+                    if not _classify(e):
                         raise
                     last_exc = e
 
@@ -102,8 +141,7 @@ def retry_on_transient_errors(
                         "LLM call failed after %d attempts: %s", attempt, last_exc
                     )
                     raise last_exc  # type: ignore[misc]
-                delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
-                delay += random.uniform(0, delay * 0.1)
+                delay = _compute_delay(attempt)
                 logger.warning(
                     "LLM call attempt %d failed (%s); retrying in %.1fs",
                     attempt,
@@ -111,12 +149,8 @@ def retry_on_transient_errors(
                     delay,
                 )
                 time.sleep(delay)
-            # Unreachable — either we returned or raised above.
-            if last_exc is not None:
-                raise last_exc
-            raise RuntimeError("retry_on_transient_errors: unexpected exit")
 
-        return wrapper
+        return sync_wrapper
 
     return decorator
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -142,3 +142,73 @@ class TestRetryOnTransientErrors:
                 fn()
 
         assert calls["count"] == 3
+
+
+class TestRetryAsyncSupport:
+    """The decorator must retry `async def` functions without blocking the loop."""
+
+    def test_async_function_is_retried(self):
+        """An async function's awaited body raises — retries must kick in."""
+        import asyncio
+
+        calls = {"count": 0}
+
+        @retry_on_transient_errors(max_attempts=3, base_delay=0.0, max_delay=0.0)
+        async def fn():
+            calls["count"] += 1
+            if calls["count"] < 3:
+                raise APIConnectionError(request=_make_request())
+            return "ok"
+
+        with patch("slayer.llm.asyncio.sleep") as mock_async_sleep:
+            # asyncio.sleep is awaited, so it must return an awaitable.
+            async def _noop(*_a, **_kw):
+                return None
+
+            mock_async_sleep.side_effect = _noop
+            result = asyncio.run(fn())
+
+        assert result == "ok"
+        assert calls["count"] == 3
+        # Two inter-attempt sleeps (1→2, 2→3), using async sleep — NOT time.sleep.
+        assert mock_async_sleep.call_count == 2
+
+    def test_async_function_does_not_use_blocking_sleep(self):
+        """Async path must never call the blocking time.sleep."""
+        import asyncio
+
+        @retry_on_transient_errors(max_attempts=2, base_delay=0.0)
+        async def fn():
+            raise APIConnectionError(request=_make_request())
+
+        async def _noop(*_a, **_kw):
+            return None
+
+        with patch("slayer.llm.time.sleep") as mock_blocking_sleep, patch(
+            "slayer.llm.asyncio.sleep", side_effect=_noop
+        ):
+            with pytest.raises(APIConnectionError):
+                asyncio.run(fn())
+
+        # The blocking sleep must never be touched on the async path.
+        assert mock_blocking_sleep.call_count == 0
+
+    def test_async_authentication_error_is_not_retried(self):
+        """AuthenticationError on async path must propagate immediately."""
+        import asyncio
+
+        calls = {"count": 0}
+
+        @retry_on_transient_errors(max_attempts=5, base_delay=0.0)
+        async def fn():
+            calls["count"] += 1
+            raise AuthenticationError(
+                message="bad key",
+                response=_make_response(401),
+                body=None,
+            )
+
+        with pytest.raises(AuthenticationError):
+            asyncio.run(fn())
+
+        assert calls["count"] == 1
