@@ -217,59 +217,53 @@ Resume Skills: {resume_skills_json}
 Resume Experiences: {experiences_json}"""
 
     input_msg = {"messages": [{"role": "user", "content": user_msg}]}
+
+    # UI 콜백이 있으면 스트리밍으로 진행 상황만 전달, 최종 결과는 ainvoke로 수신
+    if on_event:
+        async for event in agent.astream_events(input_msg, version="v2"):
+            kind = event.get("event", "")
+            if kind == "on_chat_model_start":
+                on_event("thinking", {"message": "Agent deciding next action..."})
+            elif kind == "on_tool_start":
+                tool_name = event.get("name", "")
+                icon, label = MATCH_TOOL_LABELS.get(tool_name, ("🔧", tool_name))
+                on_event("tool_call", {"tool": tool_name, "icon": icon, "label": label})
+            elif kind == "on_tool_end":
+                tool_name = event.get("name", "")
+                output = str(event.get("data", {}).get("output", ""))
+                if tool_name == "analyze_keywords":
+                    try:
+                        d = json.loads(output)
+                        ratio = d.get("coverage_ratio", 0)
+                        summary = f"Keyword coverage: {ratio:.0%}"
+                    except (json.JSONDecodeError, TypeError):
+                        summary = "Keywords analyzed"
+                elif tool_name == "assess_experience_fit":
+                    try:
+                        d = json.loads(output)
+                        score = d.get("experience_score", "?")
+                        summary = f"Experience fit: {score}/100"
+                    except (json.JSONDecodeError, TypeError):
+                        summary = "Experience assessed"
+                elif tool_name == "identify_strategic_gaps":
+                    try:
+                        d = json.loads(output)
+                        ats = d.get("ats_score", "?")
+                        summary = f"ATS score: {ats}/100"
+                    except (json.JSONDecodeError, TypeError):
+                        summary = "Gaps identified"
+                else:
+                    summary = output[:80]
+                on_event("tool_result", {"tool": tool_name, "summary": summary})
+
+    # 최종 결과는 ainvoke로 확실하게 수신
     content = ""
-
-    async for event in agent.astream_events(input_msg, version="v2"):
-        kind = event.get("event", "")
-        if kind == "on_chat_model_start" and on_event:
-            on_event("thinking", {"message": "Agent deciding next action..."})
-        elif kind == "on_tool_start" and on_event:
-            tool_name = event.get("name", "")
-            icon, label = MATCH_TOOL_LABELS.get(tool_name, ("🔧", tool_name))
-            on_event("tool_call", {"tool": tool_name, "icon": icon, "label": label})
-        elif kind == "on_tool_end" and on_event:
-            tool_name = event.get("name", "")
-            output = str(event.get("data", {}).get("output", ""))
-            if tool_name == "analyze_keywords":
-                try:
-                    d = json.loads(output)
-                    ratio = d.get("coverage_ratio", 0)
-                    summary = f"Keyword coverage: {ratio:.0%}"
-                except (json.JSONDecodeError, TypeError):
-                    summary = "Keywords analyzed"
-            elif tool_name == "assess_experience_fit":
-                try:
-                    d = json.loads(output)
-                    score = d.get("experience_score", "?")
-                    summary = f"Experience fit: {score}/100"
-                except (json.JSONDecodeError, TypeError):
-                    summary = "Experience assessed"
-            elif tool_name == "identify_strategic_gaps":
-                try:
-                    d = json.loads(output)
-                    ats = d.get("ats_score", "?")
-                    summary = f"ATS score: {ats}/100"
-                except (json.JSONDecodeError, TypeError):
-                    summary = "Gaps identified"
-            else:
-                summary = output[:80]
-            on_event("tool_result", {"tool": tool_name, "summary": summary})
-        elif kind == "on_chat_model_end":
-            output = event.get("data", {}).get("output", None)
-            if output and hasattr(output, "content") and output.content:
-                content = output.content
-
-    if not content:
-        try:
-            result = await agent.ainvoke(input_msg)
-            messages = result.get("messages", [])
-            if not messages:
-                raise ValueError("Agent produced no output")
-            final_message = messages[-1]
-            content = final_message.content if hasattr(final_message, "content") else str(final_message)
-        except Exception as e:
-            logger.error("Fallback invocation failed: %s", e)
-            content = ""
+    try:
+        result = await agent.ainvoke(input_msg)
+        from slayer.llm import _extract_text_from_content
+        content = _extract_text_from_content(result["messages"][-1].content)
+    except Exception as e:
+        logger.error("ainvoke failed: %s", e)
 
     if on_event:
         on_event("done", {"message": "Match analysis complete"})

@@ -142,7 +142,13 @@ JD JSON:
         elif kind == "on_chat_model_end":
             output = event.get("data", {}).get("output", None)
             if output and hasattr(output, "content") and output.content:
-                content = output.content
+                from slayer.llm import _extract_text_from_content
+
+                extracted = _extract_text_from_content(output.content)
+
+                if extracted:
+
+                    content = extracted
 
     if not content:
         try:
@@ -151,7 +157,8 @@ JD JSON:
             if not messages:
                 raise ValueError("Agent produced no output")
             final_message = messages[-1]
-            content = final_message.content if hasattr(final_message, "content") else str(final_message)
+            from slayer.llm import _extract_text_from_content
+            content = _extract_text_from_content(final_message.content) if hasattr(final_message, "content") else str(final_message)
         except Exception as e:
             logger.error("Fallback invocation failed: %s", e)
             content = ""
@@ -225,8 +232,9 @@ JD JSON: {jd_json}"""
 
     result = await agent.ainvoke({"messages": [{"role": "user", "content": user_msg}]})
 
+    from slayer.llm import _extract_text_from_content
     final_message = result["messages"][-1]
-    content = final_message.content if hasattr(final_message, "content") else str(final_message)
+    content = _extract_text_from_content(final_message.content) if hasattr(final_message, "content") else str(final_message)
 
     try:
         data = json.loads(parse_agent_json(content))

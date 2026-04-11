@@ -132,7 +132,13 @@ JD Skills (for stats): {skills_json}"""
         elif kind == "on_chat_model_end":
             output = event.get("data", {}).get("output", None)
             if output and hasattr(output, "content") and output.content:
-                content = output.content
+                from slayer.llm import _extract_text_from_content
+
+                extracted = _extract_text_from_content(output.content)
+
+                if extracted:
+
+                    content = extracted
 
     if not content:
         try:
@@ -141,7 +147,8 @@ JD Skills (for stats): {skills_json}"""
             if not messages:
                 raise ValueError("Agent produced no output")
             final_message = messages[-1]
-            content = final_message.content if hasattr(final_message, "content") else str(final_message)
+            from slayer.llm import _extract_text_from_content
+            content = _extract_text_from_content(final_message.content) if hasattr(final_message, "content") else str(final_message)
         except Exception as e:
             logger.error("Fallback invocation failed: %s", e)
             content = ""
