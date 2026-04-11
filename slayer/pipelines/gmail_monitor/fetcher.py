@@ -24,11 +24,16 @@ from slayer.schemas import GmailParseResult, GmailStatusType
 logger = logging.getLogger(__name__)
 
 # 채용 관련 메일 필터 키워드 (제목 기준)
+# 주의: "안내", "결과", "지원", "서류", "과제", "application" 등 범용 단어는 제외
 _RECRUIT_KEYWORDS = [
-    "합격", "불합격", "면접", "서류", "코딩테스트", "과제", "전형",
-    "채용", "지원", "결과", "안내", "통보",
-    "passed", "rejected", "interview", "screening", "offer",
-    "application", "hiring", "recruit",
+    # 한글 — 채용 전형에서만 쓰이는 표현
+    "합격", "불합격", "면접", "코딩테스트", "전형",
+    "채용", "서류전형", "입사", "지원서", "최종합격",
+    # 영어 — 채용 특화
+    "passed", "rejected", "interview", "screening",
+    "job offer", "offer letter", "hiring", "recruit",
+    "we'd like to invite", "congratulations on",
+    "unfortunately", "move forward",
 ]
 
 
@@ -73,7 +78,10 @@ def poll_user(user_id: str) -> list[dict]:
             return []
 
         processed = []
-        for msg in messages:
+        for i, msg in enumerate(messages):
+            if i > 0:
+                import time
+                time.sleep(2)  # Gemini free tier: 30 req/min → 2초 간격
             event = _process_message(service, msg, user_id)
             if event:
                 processed.append(event)
@@ -100,33 +108,103 @@ def _get_user(user_id: str):
     from slayer.db.session import get_session
 
     with get_session() as session:
-        return session.query(User).filter_by(id=uuid.UUID(user_id)).first()
+        user = session.query(User).filter_by(id=uuid.UUID(user_id)).first()
+        if user:
+            session.expunge(user)  # 세션 닫혀도 속성 접근 가능하도록 분리
+        return user
 
 
 def _build_gmail_service(user):
-    """OAuth 토큰으로 Gmail API 서비스 빌드. 만료 시 자동 갱신."""
+    """OAuth 토큰으로 Gmail API 서비스 빌드. 만료 시 Supabase로 자동 갱신."""
     from google.oauth2.credentials import Credentials
-    from google.auth.transport.requests import Request
     from googleapiclient.discovery import build
 
+    access_token = user.google_access_token
+
+    # 토큰 만료 시 Supabase refresh_token으로 자동 갱신
+    if _is_token_expired(user) and user.supabase_refresh_token:
+        fresh = _refresh_via_supabase(str(user.id), user.supabase_refresh_token)
+        if fresh:
+            access_token = fresh
+
+    from slayer.config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+    # google_refresh_token이 있으면 mid-run 만료 시 자동 갱신 가능
     creds = Credentials(
-        token=user.google_access_token,
-        refresh_token=user.google_refresh_token,
+        token=access_token,
+        refresh_token=user.google_refresh_token or None,
         token_uri="https://oauth2.googleapis.com/token",
+        client_id=GOOGLE_CLIENT_ID or None,
+        client_secret=GOOGLE_CLIENT_SECRET or None,
     )
-
-    if creds.expired and creds.refresh_token:
-        try:
-            creds.refresh(Request())
-            _save_refreshed_token(str(user.id), creds.token, creds.expiry)
-        except Exception as e:
-            logger.warning("토큰 갱신 실패: %s", e)
-
     return build("gmail", "v1", credentials=creds)
 
 
-def _save_refreshed_token(user_id: str, new_token: str, expiry: datetime | None) -> None:
-    """갱신된 access token을 DB에 저장."""
+def _is_token_expired(user) -> bool:
+    """access token 만료 여부 확인 (5분 여유)."""
+    from datetime import timezone, timedelta
+    if not user.token_expires_at:
+        return True
+    now = datetime.now(timezone.utc)
+    expires = user.token_expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    return now >= expires - timedelta(minutes=5)
+
+
+def _refresh_via_supabase(user_id: str, supabase_refresh_token: str) -> str | None:
+    """Supabase refresh_token으로 새 Google access_token 자동 발급.
+
+    Returns:
+        새 provider_token(Google access_token), 실패 시 None
+    """
+    import urllib.request
+    import json as _json
+    from datetime import timezone, timedelta
+    from slayer.config import SUPABASE_URL, SUPABASE_ANON_KEY
+
+    url = f"{SUPABASE_URL}/auth/v1/token?grant_type=refresh_token"
+    payload = _json.dumps({"refresh_token": supabase_refresh_token}).encode()
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = _json.loads(resp.read())
+
+        new_provider_token   = data.get("provider_token", "")
+        new_supabase_refresh = data.get("refresh_token", "") or supabase_refresh_token
+        new_provider_refresh = data.get("provider_refresh_token", "")
+        expires_in           = int(data.get("expires_in", 3600))
+
+        if not new_provider_token:
+            logger.warning("Supabase 갱신 응답에 provider_token 없음: %s", list(data.keys()))
+            return None
+
+        expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+        _save_refreshed_token(
+            user_id, new_provider_token, expiry,
+            supabase_refresh_token=new_supabase_refresh,
+            provider_refresh_token=new_provider_refresh,
+        )
+        logger.info("Supabase 토큰 자동 갱신 완료: user=%s", user_id)
+        return new_provider_token
+
+    except Exception as e:
+        logger.warning("Supabase 토큰 갱신 실패: %s", e)
+        return None
+
+
+def _save_refreshed_token(
+    user_id: str,
+    new_token: str,
+    expiry: datetime | None,
+    supabase_refresh_token: str = "",
+    provider_refresh_token: str = "",
+) -> None:
+    """갱신된 토큰들을 DB에 저장."""
     import uuid
     from slayer.db.models import User
     from slayer.db.session import get_session
@@ -138,6 +216,10 @@ def _save_refreshed_token(user_id: str, new_token: str, expiry: datetime | None)
                 user.google_access_token = new_token
                 if expiry:
                     user.token_expires_at = expiry
+                if supabase_refresh_token:
+                    user.supabase_refresh_token = supabase_refresh_token
+                if provider_refresh_token:
+                    user.google_refresh_token = provider_refresh_token
     except Exception as e:
         logger.warning("토큰 DB 저장 실패: %s", e)
 
@@ -145,7 +227,7 @@ def _save_refreshed_token(user_id: str, new_token: str, expiry: datetime | None)
 def _fetch_new_messages(service, user) -> Iterator[dict]:
     """gmail_last_history_id 기준 신규 메일 목록 반환.
 
-    history_id 없으면 최근 30일 메일로 초기화.
+    history_id 없으면(첫 폴링) 최근 30일 메일 최대 200건을 가져온다.
     """
     if user.gmail_last_history_id:
         try:
@@ -154,11 +236,11 @@ def _fetch_new_messages(service, user) -> Iterator[dict]:
         except Exception as e:
             logger.warning("History API 실패, 최근 메일로 fallback: %s", e)
 
-    # 초기 폴링: 최근 7일 메일
+    # 초기 폴링: 최근 30일 메일
     result = service.users().messages().list(
         userId="me",
-        q="newer_than:7d",
-        maxResults=50,
+        q="newer_than:30d",
+        maxResults=200,
     ).execute()
     for msg in result.get("messages", []):
         yield msg
@@ -209,6 +291,11 @@ def _process_message(service, msg: dict, user_id: str) -> dict | None:
         )
     except GmailParseError as e:
         logger.warning("메일 분류 실패 (id=%s): %s", msg_id, e)
+        return None
+
+    # 채용 프로세스 이메일이 아닌 경우 skip
+    if result.company == "NOT_RECRUITMENT":
+        logger.debug("채용 무관 메일 skip (id=%s): %s", msg_id, subject)
         return None
 
     # gmail_events INSERT + 상태 전이
@@ -343,10 +430,59 @@ def _save_event(
     return event_data
 
 
+def _get_or_create_company(session, name: str):
+    """회사명으로 Company를 찾거나 신규 생성."""
+    import uuid as _uuid
+    from slayer.db.models import Company
+
+    company = session.query(Company).filter_by(name=name).first()
+    if not company:
+        company = Company(id=_uuid.uuid4(), name=name)
+        session.add(company)
+        session.flush()  # ID 확보 (세션 내에서 바로 참조 가능하도록)
+        logger.info("이메일 감지로 신규 회사 등록: %s", name)
+    return company
+
+
+def _get_or_create_application(session, user_id: str, company, initial_status: str):
+    """user + company 조합의 활성 Application을 찾거나 신규 생성.
+
+    Returns:
+        (application, created: bool)
+    """
+    import uuid as _uuid
+    from slayer.db.models import Application
+
+    app = (
+        session.query(Application)
+        .filter_by(user_id=_uuid.UUID(user_id), company_id=company.id)
+        .filter(Application.status.notin_(["rejected", "withdrawn", "final_pass"]))
+        .first()
+    )
+    if app:
+        return app, False
+
+    app = Application(
+        id=_uuid.uuid4(),
+        user_id=_uuid.UUID(user_id),
+        company_id=company.id,
+        status=initial_status,
+    )
+    session.add(app)
+    session.flush()
+    logger.info("이메일 감지로 신규 지원 건 생성: user=%s, company=%s, status=%s",
+                user_id, company.name, initial_status)
+    return app, True
+
+
 def _handle_pass_or_interview(user_id: str, result: GmailParseResult, event_data: dict) -> None:
-    """합격/면접 안내: applications 상태 → in_progress, 면접이면 Calendar 등록."""
+    """합격/면접 안내: applications 상태 → in_progress.
+
+    지원 건이 없으면 'applied' 상태로 자동 생성 후 전이.
+    면접이면 Calendar 등록도 수행.
+    """
     import uuid
-    from slayer.db.models import Application, StatusHistory, Company
+    from slayer.db.models import StatusHistory
     from slayer.db.session import get_session, is_db_available
 
     if not is_db_available():
@@ -354,27 +490,36 @@ def _handle_pass_or_interview(user_id: str, result: GmailParseResult, event_data
 
     try:
         with get_session() as session:
-            # 회사명으로 application 매칭
-            company = session.query(Company).filter_by(name=result.company).first()
-            if not company:
-                logger.info("매칭 회사 없음: %s (수동 매칭 필요)", result.company)
-                return
-
-            app = (
-                session.query(Application)
-                .filter_by(user_id=uuid.UUID(user_id), company_id=company.id)
-                .filter(Application.status.in_(["applied", "reviewing"]))
-                .first()
+            company = _get_or_create_company(session, result.company)
+            app, created = _get_or_create_application(
+                session, user_id, company, initial_status="applied"
             )
-            if not app:
+
+            # 이미 최종 단계이면 전이 불필요
+            if app.status in ("in_progress", "final_pass"):
                 return
 
+            prev_status = app.status
             app.status = "in_progress"
+
+            if created:
+                # 신규 생성: applied → in_progress 두 이력 기록
+                session.add(StatusHistory(
+                    id=uuid.uuid4(),
+                    user_id=uuid.UUID(user_id),
+                    application_id=app.id,
+                    previous_status="scrapped",
+                    new_status="applied",
+                    trigger_type="email_detected",
+                    triggered_by="gmail_monitor",
+                    evidence_summary="이메일 감지로 자동 생성",
+                ))
+
             session.add(StatusHistory(
                 id=uuid.uuid4(),
                 user_id=uuid.UUID(user_id),
                 application_id=app.id,
-                previous_status="applied",
+                previous_status=prev_status,
                 new_status="in_progress",
                 trigger_type="email_detected",
                 triggered_by="gmail_monitor",
@@ -390,9 +535,12 @@ def _handle_pass_or_interview(user_id: str, result: GmailParseResult, event_data
 
 
 def _handle_rejection(user_id: str, result: GmailParseResult, event_data: dict) -> None:
-    """불합격/거절: applications 상태 → rejected."""
+    """불합격/거절: applications 상태 → rejected.
+
+    지원 건이 없으면 'applied' 상태로 자동 생성 후 전이.
+    """
     import uuid
-    from slayer.db.models import Application, StatusHistory, Company
+    from slayer.db.models import StatusHistory
     from slayer.db.session import get_session, is_db_available
 
     if not is_db_available():
@@ -400,20 +548,28 @@ def _handle_rejection(user_id: str, result: GmailParseResult, event_data: dict) 
 
     try:
         with get_session() as session:
-            company = session.query(Company).filter_by(name=result.company).first()
-            if not company:
-                return
-
-            app = (
-                session.query(Application)
-                .filter_by(user_id=uuid.UUID(user_id), company_id=company.id)
-                .filter(Application.status.notin_(["rejected", "withdrawn", "final_pass"]))
-                .first()
+            company = _get_or_create_company(session, result.company)
+            app, created = _get_or_create_application(
+                session, user_id, company, initial_status="applied"
             )
-            if not app:
+
+            if app.status in ("rejected", "withdrawn", "final_pass"):
                 return
 
             prev_status = app.status
+
+            if created:
+                session.add(StatusHistory(
+                    id=uuid.uuid4(),
+                    user_id=uuid.UUID(user_id),
+                    application_id=app.id,
+                    previous_status="scrapped",
+                    new_status="applied",
+                    trigger_type="email_detected",
+                    triggered_by="gmail_monitor",
+                    evidence_summary="이메일 감지로 자동 생성",
+                ))
+
             app.status = "rejected"
             session.add(StatusHistory(
                 id=uuid.uuid4(),

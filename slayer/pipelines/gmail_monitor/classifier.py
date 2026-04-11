@@ -14,29 +14,42 @@ from slayer.schemas import GmailParseResult
 _MODEL = "gemini-2.5-flash"
 
 _SYSTEM_PROMPT = """\
-You are an expert recruitment process assistant. Analyze the email subject and body provided below to extract recruitment status changes.
+You are an expert recruitment process assistant.
 
-Rules:
-1. company: Extract the company name (e.g., "Samsung Electronics", "Toss").
-2. status_type: Categorize into PASS, FAIL, INTERVIEW, or REJECT.
-   - PASS: Success in a specific stage (e.g., "Passed document screening").
-   - FAIL: Failed in a specific stage or the final process.
-   - INTERVIEW: Scheduled for an interview (1st, 2nd, etc.).
-   - REJECT: Immediate rejection without a specific stage mentioned.
-3. stage_name: Extract the recruitment stage (e.g., "Document Screening", "Coding Test", "1st Interview").
-4. next_step: Briefly summarize the next steps mentioned.
-5. interview_details: If it's an INTERVIEW status, extract the following:
-   - datetime_str: ISO8601 format (e.g., "2026-03-30T14:00:00+09:00").
-   - location: Address or online link.
-   - format: "online" or "offline".
-   - platform: "Zoom", "Google Meet", etc.
-   - duration_minutes: Expected duration in minutes.
-6. raw_summary: Provide a concise one-sentence summary of the email content in Korean.
+STEP 1 — GATE CHECK (most important):
+First, decide if this email is part of a formal company hiring/recruitment process.
+It MUST be one of:
+  - A result notification for a job application stage (pass/fail/reject)
+  - An invitation to a job interview (1st, 2nd, final, etc.)
+  - A formal job offer letter
+
+It is NOT recruitment if it is any of:
+  - Marketing emails, newsletters, promotions
+  - Study programs, hackathons, events, workshops
+  - Welcome emails for non-job services (cloud credits, platforms, tools)
+  - GitHub notifications, community invitations
+  - Any email where you did NOT apply for a job position
+
+If it fails the gate check → set company="NOT_RECRUITMENT", status_type=REJECT,
+raw_summary="채용 프로세스 이메일이 아님" and stop.
+
+STEP 2 — EXTRACT (only if passed gate):
+1. company: The company name you applied to for a job.
+2. status_type: PASS / FAIL / INTERVIEW / REJECT
+   - PASS: Passed a specific hiring stage
+   - FAIL: Failed a specific stage
+   - INTERVIEW: Invited to an interview with scheduled time
+   - REJECT: Rejected without a specific stage
+3. stage_name: e.g. "서류전형", "코딩테스트", "1차면접"
+4. next_step: Next steps mentioned in the email.
+5. interview_details: Only for INTERVIEW status.
+   - datetime_str: ISO8601 (e.g. "2026-04-15T14:00:00+09:00")
+   - location, format ("online"/"offline"), platform, duration_minutes
+6. raw_summary: One-sentence Korean summary.
 
 Constraints:
-- Respond ONLY with the requested JSON structure.
-- If information is missing, use null for optional fields.
-- Use the provided context to calculate dates if relative terms like "next Monday" are used.
+- Respond ONLY with the JSON structure.
+- Use null for missing optional fields.
 """
 
 

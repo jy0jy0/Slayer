@@ -16,11 +16,100 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from slayer.db.session import is_db_available
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+_STREAMLIT_URL = "http://localhost:8501"
+
+_CALLBACK_HTML = """<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>로그인 중...</title></head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function () {{
+    var SUPABASE_URL  = '{supabase_url}';
+    var SUPABASE_KEY  = '{supabase_anon_key}';
+    var STREAMLIT_URL = '{streamlit_url}';
+
+    function forwardTokens(access_token, provider_token, provider_refresh_token, refresh_token, expires_at) {{
+        var qs = new URLSearchParams({{
+            access_token:           access_token           || '',
+            provider_token:         provider_token         || '',
+            provider_refresh_token: provider_refresh_token || '',
+            refresh_token:          refresh_token          || '',
+            expires_at:             expires_at             || '',
+        }});
+        window.location.replace(STREAMLIT_URL + '/?' + qs.toString());
+    }}
+
+    // ── PKCE flow: ?code=... ──────────────────────────────
+    var urlParams = new URLSearchParams(window.location.search);
+    var code = urlParams.get('code');
+    if (code) {{
+        var client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        client.auth.exchangeCodeForSession(code).then(function(result) {{
+            var session = result.data && result.data.session;
+            if (session) {{
+                forwardTokens(
+                    session.access_token,
+                    session.provider_token         || '',
+                    session.provider_refresh_token || '',
+                    session.refresh_token,
+                    session.expires_at ? String(session.expires_at) : ''
+                );
+            }} else {{
+                window.location.replace(STREAMLIT_URL);
+            }}
+        }});
+        return;
+    }}
+
+    // ── Implicit flow: #access_token=... ──────────────────
+    var hash = window.location.hash;
+    if (hash && hash.includes('access_token')) {{
+        var params = new URLSearchParams(hash.substring(1));
+        forwardTokens(
+            params.get('access_token'),
+            params.get('provider_token'),
+            params.get('provider_refresh_token'),
+            params.get('refresh_token'),
+            params.get('expires_at')
+        );
+        return;
+    }}
+
+    // 토큰 없음 → 로그인 페이지로
+    window.location.replace(STREAMLIT_URL);
+}})();
+</script>
+<p style="font-family:sans-serif;text-align:center;padding-top:40px;color:#888">로그인 처리 중...</p>
+</body>
+</html>
+"""
+
+
+def _build_callback_html() -> str:
+    from slayer.config import SUPABASE_URL, SUPABASE_ANON_KEY
+    return _CALLBACK_HTML.format(
+        supabase_url=SUPABASE_URL,
+        supabase_anon_key=SUPABASE_ANON_KEY,
+        streamlit_url=_STREAMLIT_URL,
+    )
+
+
+@router.get("/callback", response_class=HTMLResponse, include_in_schema=False)
+async def oauth_callback():
+    """Supabase OAuth 콜백 중간 페이지.
+
+    Implicit flow: Supabase → /auth/callback#access_token=... → JS → localhost:8501/?access_token=...
+    PKCE flow:     Supabase → /auth/callback?code=...         → JS(SDK 교환) → localhost:8501/?access_token=...
+    """
+    return HTMLResponse(content=_build_callback_html())
 
 
 class GoogleTokenRequest(BaseModel):

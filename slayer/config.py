@@ -19,6 +19,8 @@ OPENAI_MODEL = "gpt-4o-mini"
 
 # ── Google (Gemini + OAuth) ───────────────────────────────
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 
 # ── 네이버 뉴스 검색 API ─────────────────────────────────
 NAVER_CLIENT_ID = os.environ.get("NAVER_CLIENT_ID", "")
@@ -39,6 +41,10 @@ FINANCIAL_SUMMARY_URL = (
     "https://apis.data.go.kr/1160100/service/"
     "GetFinaStatInfoService_V2/getSummFinaStat_V2"
 )
+
+# ── Supabase ──────────────────────────────────────────────
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://mwahcudydbkjjtlfgubr.supabase.co")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 
 # ── GCP Database ─────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
