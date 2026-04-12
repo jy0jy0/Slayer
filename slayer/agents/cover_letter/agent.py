@@ -7,14 +7,19 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any, Callable, Optional
 
 from langgraph.prebuilt import create_react_agent
 
 from slayer.agents.cover_letter.tools import compute_stats, generate_draft, review_and_refine, evaluate_draft_quality
 from slayer.llm import get_chat_model, parse_agent_json
 from slayer.schemas import CoverLetterInput, CoverLetterOutput
+from slayer.ui.events import EventType
 
 logger = logging.getLogger(__name__)
+
+# Applied at every ainvoke/astream_events call to cap ReAct loop length.
+RUNTIME_CONFIG = {"recursion_limit": 15}
 
 SYSTEM_PROMPT = """\
 You are a cover letter writing expert for Korean job seekers.
@@ -69,7 +74,10 @@ TOOL_LABELS = {
 }
 
 
-async def generate_cover_letter_streaming(input_data: CoverLetterInput, on_event=None) -> CoverLetterOutput:
+async def generate_cover_letter_streaming(
+    input_data: CoverLetterInput,
+    on_event: Optional[Callable[[EventType, dict[str, Any]], None]] = None,
+) -> CoverLetterOutput:
     """Run cover letter agent with streaming events."""
     logger.info("Cover letter agent started (streaming)")
     agent = build_cover_letter_agent()
@@ -91,14 +99,14 @@ JD Skills (for stats): {skills_json}"""
     input_msg = {"messages": [{"role": "user", "content": user_msg}]}
     content = ""
 
-    async for event in agent.astream_events(input_msg, version="v2"):
+    async for event in agent.astream_events(input_msg, version="v2", config=RUNTIME_CONFIG):
         kind = event.get("event", "")
         if kind == "on_chat_model_start" and on_event:
-            on_event("thinking", {"message": "Agent deciding next action..."})
+            on_event(EventType.THINKING, {"message": "Agent deciding next action..."})
         elif kind == "on_tool_start" and on_event:
             tool_name = event.get("name", "")
             icon, label = TOOL_LABELS.get(tool_name, ("🔧", tool_name))
-            on_event("tool_call", {"tool": tool_name, "icon": icon, "label": label})
+            on_event(EventType.TOOL_CALL, {"tool": tool_name, "icon": icon, "label": label})
         elif kind == "on_tool_end" and on_event:
             tool_name = event.get("name", "")
             output = str(event.get("data", {}).get("output", ""))
@@ -128,7 +136,7 @@ JD Skills (for stats): {skills_json}"""
                     summary = "Quality evaluated"
             else:
                 summary = output[:80]
-            on_event("tool_result", {"tool": tool_name, "summary": summary})
+            on_event(EventType.TOOL_RESULT, {"tool": tool_name, "summary": summary})
         elif kind == "on_chat_model_end":
             output = event.get("data", {}).get("output", None)
             if output and hasattr(output, "content") and output.content:
@@ -136,7 +144,7 @@ JD Skills (for stats): {skills_json}"""
 
     if not content:
         try:
-            result = await agent.ainvoke(input_msg)
+            result = await agent.ainvoke(input_msg, config=RUNTIME_CONFIG)
             messages = result.get("messages", [])
             if not messages:
                 raise ValueError("Agent produced no output")
@@ -147,7 +155,7 @@ JD Skills (for stats): {skills_json}"""
             content = ""
 
     if on_event:
-        on_event("done", {"message": "Cover letter complete"})
+        on_event(EventType.DONE, {"message": "Cover letter complete"})
 
     try:
         data = json.loads(parse_agent_json(content))

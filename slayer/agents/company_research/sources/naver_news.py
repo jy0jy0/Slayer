@@ -1,7 +1,7 @@
-"""네이버 뉴스 검색 API 소스.
+"""Naver News Search API source.
 
-담당: 지호
-마이그레이션: feat/company-research 에서 이동
+Owner: Jiho
+Migration: moved from feat/company-research branch.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ def _strip_html(text: str) -> str:
 
 
 class NaverNewsSource(BaseSource):
-    """네이버 뉴스 검색 API를 통해 기업 관련 뉴스를 수집한다."""
+    """Collect company-related news via the Naver News Search API."""
 
     @property
     def source_name(self) -> str:
@@ -33,9 +33,9 @@ class NaverNewsSource(BaseSource):
     async def fetch(self, company_name: str, **kwargs) -> dict:
         if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
             logger.warning(
-                "NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET이 설정되지 않았습니다."
+                "NAVER_CLIENT_ID or NAVER_CLIENT_SECRET is not configured."
             )
-            return {"articles": [], "error": "API 키 미설정"}
+            return {"articles": [], "error": "API key not configured"}
 
         headers = {
             "X-Naver-Client-Id": NAVER_CLIENT_ID,
@@ -62,14 +62,14 @@ class NaverNewsSource(BaseSource):
                     }
                 )
 
-            logger.info("네이버 뉴스 %d건 수집: %s", len(articles), company_name)
+            logger.info("Collected %d Naver news articles: %s", len(articles), company_name)
             return {"articles": articles}
 
         except httpx.HTTPStatusError as exc:
             logger.error(
-                "네이버 뉴스 API 오류 (%d): %s", exc.response.status_code, exc
+                "Naver news API error (%d): %s", exc.response.status_code, exc
             )
             return {"articles": [], "error": f"HTTP {exc.response.status_code}"}
         except Exception as exc:
-            logger.error("네이버 뉴스 수집 실패: %s", exc)
+            logger.error("Naver news collection failed: %s", exc)
             return {"articles": [], "error": str(exc)}

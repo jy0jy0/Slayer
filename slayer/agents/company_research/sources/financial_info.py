@@ -1,7 +1,7 @@
-"""금융위원회 재무정보 API 소스.
+"""Korea FSC financial summary API source.
 
-담당: 지호
-마이그레이션: feat/company-research 에서 이동
+Owner: Jiho
+Migration: moved from feat/company-research branch.
 """
 
 from __future__ import annotations
@@ -18,14 +18,14 @@ logger = logging.getLogger(__name__)
 
 
 def _extract_financial(items: list[dict]) -> dict | None:
-    """재무제표 항목 리스트에서 가장 적합한 데이터를 추출한다.
+    """Extract the most suitable entry from a list of financial statement items.
 
-    연결재무제표(ifrs-full) 우선, 없으면 개별재무제표 사용.
+    Prefer consolidated statements (ifrs-full); fall back to separate statements.
     """
     if not items:
         return None
 
-    # 연결재무제표 우선
+    # Prefer consolidated statements ("연결" marks consolidated in the source API)
     consolidated = [
         it for it in items if it.get("fnstDivNm", "").startswith("연결")
     ]
@@ -45,7 +45,7 @@ def _extract_financial(items: list[dict]) -> dict | None:
 
 
 class FinancialInfoSource(BaseSource):
-    """금융위원회 요약재무제표 API를 통해 기업 재무정보를 수집한다."""
+    """Collect corporate financial data via the Korea FSC summary financial-statement API."""
 
     @property
     def source_name(self) -> str:
@@ -54,14 +54,14 @@ class FinancialInfoSource(BaseSource):
     async def fetch(self, company_name: str, **kwargs) -> dict:
         crno = kwargs.get("crno", "")
         if not crno:
-            logger.warning("crno(법인등록번호)가 필요합니다: %s", company_name)
-            return {"error": "crno 미제공"}
+            logger.warning("crno (corporate registration number) is required: %s", company_name)
+            return {"error": "crno not provided"}
 
         if not DATA_GO_KR_API_KEY:
-            logger.warning("DATA_GO_KR_API_KEY가 설정되지 않았습니다.")
-            return {"error": "API 키 미설정"}
+            logger.warning("DATA_GO_KR_API_KEY is not configured.")
+            return {"error": "API key not configured"}
 
-        # 현재 사업연도 → 전년도 순으로 시도
+        # Try the current fiscal year first, then fall back to the previous year.
         current_year = datetime.now().year
         years_to_try = [str(current_year), str(current_year - 1)]
 
@@ -98,7 +98,7 @@ class FinancialInfoSource(BaseSource):
                     result = _extract_financial(items)
                     if result:
                         logger.info(
-                            "재무정보 수집 완료: %s (사업연도 %s)",
+                            "Financial info collection complete: %s (fiscal year %s)",
                             company_name,
                             biz_year,
                         )
@@ -106,15 +106,15 @@ class FinancialInfoSource(BaseSource):
 
             except httpx.HTTPStatusError as exc:
                 logger.error(
-                    "재무정보 API 오류 (%d, 연도 %s): %s",
+                    "Financial info API error (%d, year %s): %s",
                     exc.response.status_code,
                     biz_year,
                     exc,
                 )
             except Exception as exc:
                 logger.error(
-                    "재무정보 수집 실패 (연도 %s): %s", biz_year, exc
+                    "Financial info collection failed (year %s): %s", biz_year, exc
                 )
 
-        logger.warning("재무정보 조회 결과 없음: %s", company_name)
-        return {"error": "조회 결과 없음"}
+        logger.warning("No financial info results: %s", company_name)
+        return {"error": "No results"}

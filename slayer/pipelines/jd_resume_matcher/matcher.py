@@ -1,20 +1,24 @@
-"""JD-이력서 매칭 분석 — ReAct Agent.
+"""JD-resume matching analysis — ReAct Agent.
 
-NOTE: 현지님 프로덕션 구현으로 교체 가능
+NOTE: can be replaced with Hyunji's production implementation.
 """
 from __future__ import annotations
 
 import json
 import logging
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 
 from slayer.llm import get_chat_model, get_default_provider, parse_agent_json
 from slayer.schemas import JDSchema, MatchResult, ParsedResume
+from slayer.ui.events import EventType
 
 logger = logging.getLogger(__name__)
+
+# Applied at every ainvoke/astream_events call to cap ReAct loop length.
+RUNTIME_CONFIG = {"recursion_limit": 15}
 
 
 # ═══════════════════════════════════════════════════
@@ -183,9 +187,9 @@ def build_matcher_agent():
 async def match_jd_resume(
     jd: JDSchema,
     resume: ParsedResume,
-    on_event: Optional[Callable] = None,
+    on_event: Optional[Callable[[EventType, dict[str, Any]], None]] = None,
 ) -> MatchResult:
-    """JD와 이력서를 매칭 분석하여 MatchResult를 반환.
+    """Match a JD against a resume and return a MatchResult.
 
     Args:
         jd: Parsed job description
@@ -219,14 +223,14 @@ Resume Experiences: {experiences_json}"""
     input_msg = {"messages": [{"role": "user", "content": user_msg}]}
     content = ""
 
-    async for event in agent.astream_events(input_msg, version="v2"):
+    async for event in agent.astream_events(input_msg, version="v2", config=RUNTIME_CONFIG):
         kind = event.get("event", "")
         if kind == "on_chat_model_start" and on_event:
-            on_event("thinking", {"message": "Agent deciding next action..."})
+            on_event(EventType.THINKING, {"message": "Agent deciding next action..."})
         elif kind == "on_tool_start" and on_event:
             tool_name = event.get("name", "")
             icon, label = MATCH_TOOL_LABELS.get(tool_name, ("🔧", tool_name))
-            on_event("tool_call", {"tool": tool_name, "icon": icon, "label": label})
+            on_event(EventType.TOOL_CALL, {"tool": tool_name, "icon": icon, "label": label})
         elif kind == "on_tool_end" and on_event:
             tool_name = event.get("name", "")
             output = str(event.get("data", {}).get("output", ""))
@@ -253,7 +257,7 @@ Resume Experiences: {experiences_json}"""
                     summary = "Gaps identified"
             else:
                 summary = output[:80]
-            on_event("tool_result", {"tool": tool_name, "summary": summary})
+            on_event(EventType.TOOL_RESULT, {"tool": tool_name, "summary": summary})
         elif kind == "on_chat_model_end":
             output = event.get("data", {}).get("output", None)
             if output and hasattr(output, "content") and output.content:
@@ -261,7 +265,7 @@ Resume Experiences: {experiences_json}"""
 
     if not content:
         try:
-            result = await agent.ainvoke(input_msg)
+            result = await agent.ainvoke(input_msg, config=RUNTIME_CONFIG)
             messages = result.get("messages", [])
             if not messages:
                 raise ValueError("Agent produced no output")
@@ -272,7 +276,7 @@ Resume Experiences: {experiences_json}"""
             content = ""
 
     if on_event:
-        on_event("done", {"message": "Match analysis complete"})
+        on_event(EventType.DONE, {"message": "Match analysis complete"})
 
     try:
         data = json.loads(parse_agent_json(content))
@@ -294,12 +298,12 @@ Resume Experiences: {experiences_json}"""
 
 
 # ═══════════════════════════════════════════════════
-# Mock (테스트용)
+# Mock (for tests)
 # ═══════════════════════════════════════════════════
 
 
 def create_mock_match_result() -> MatchResult:
-    """테스트용 목 데이터."""
+    """Return mock data for tests."""
     return MatchResult(
         ats_score=62.0,
         score_breakdown={

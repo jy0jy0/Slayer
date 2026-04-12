@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime
+from typing import Any, Callable, Optional
 
 from langgraph.prebuilt import create_react_agent
 
@@ -21,8 +22,12 @@ from slayer.agents.company_research.tools import (
 )
 from slayer.llm import get_chat_model, parse_agent_json
 from slayer.schemas import CompanyResearchOutput
+from slayer.ui.events import EventType
 
 logger = logging.getLogger(__name__)
+
+# Applied at every ainvoke/astream_events call to cap ReAct loop length.
+RUNTIME_CONFIG = {"recursion_limit": 15}
 
 SYSTEM_PROMPT = """\
 You are a company research agent for Korean job seekers.
@@ -69,7 +74,10 @@ def build_company_research_agent():
 
 
 
-async def run_company_research_streaming(company_name: str, on_event=None):
+async def run_company_research_streaming(
+    company_name: str,
+    on_event: Optional[Callable[[EventType, dict[str, Any]], None]] = None,
+) -> CompanyResearchOutput:
     """Run company research agent with streaming events.
 
     Args:
@@ -87,18 +95,18 @@ async def run_company_research_streaming(company_name: str, on_event=None):
     input_msg = {"messages": [{"role": "user", "content": f"Research the company: {company_name}"}]}
     content = ""
 
-    async for event in agent.astream_events(input_msg, version="v2"):
+    async for event in agent.astream_events(input_msg, version="v2", config=RUNTIME_CONFIG):
         kind = event.get("event", "")
 
         if kind == "on_chat_model_start":
             if on_event:
-                on_event("thinking", {"message": "Agent is thinking..."})
+                on_event(EventType.THINKING, {"message": "Agent is thinking..."})
 
         elif kind == "on_tool_start":
             tool_name = event.get("name", "unknown")
             tool_input = event.get("data", {}).get("input", {})
             if on_event:
-                on_event("tool_call", {"tool": tool_name, "input": tool_input})
+                on_event(EventType.TOOL_CALL, {"tool": tool_name, "input": tool_input})
 
         elif kind == "on_tool_end":
             tool_name = event.get("name", "unknown")
@@ -107,7 +115,7 @@ async def run_company_research_streaming(company_name: str, on_event=None):
             output_str = str(output)
             summary = output_str[:200] + "..." if len(output_str) > 200 else output_str
             if on_event:
-                on_event("tool_result", {"tool": tool_name, "summary": summary})
+                on_event(EventType.TOOL_RESULT, {"tool": tool_name, "summary": summary})
 
         elif kind == "on_chat_model_end":
             output = event.get("data", {}).get("output", None)
@@ -117,7 +125,7 @@ async def run_company_research_streaming(company_name: str, on_event=None):
     if not content:
         # Fallback: run non-streaming
         try:
-            result = await agent.ainvoke(input_msg)
+            result = await agent.ainvoke(input_msg, config=RUNTIME_CONFIG)
             messages = result.get("messages", [])
             if not messages:
                 raise ValueError("Agent produced no output")
@@ -128,7 +136,7 @@ async def run_company_research_streaming(company_name: str, on_event=None):
             content = ""
 
     if on_event:
-        on_event("done", {"message": "Generating report..."})
+        on_event(EventType.DONE, {"message": "Generating report..."})
 
     logger.info("Agent completed. Parsing result...")
 
@@ -157,7 +165,8 @@ async def _run_company_research_invoke(company_name: str) -> CompanyResearchOutp
     logger.info("Company research agent started (invoke): %s", company_name)
     agent = build_company_research_agent()
     result = await agent.ainvoke(
-        {"messages": [{"role": "user", "content": f"Research the company: {company_name}"}]}
+        {"messages": [{"role": "user", "content": f"Research the company: {company_name}"}]},
+        config=RUNTIME_CONFIG,
     )
     final_message = result["messages"][-1]
     content = final_message.content if hasattr(final_message, "content") else str(final_message)

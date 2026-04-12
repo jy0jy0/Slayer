@@ -1,8 +1,8 @@
-"""OpenAI LLM 클라이언트 (기업 리서치용).
+"""OpenAI LLM client (for company research).
 
-담당: 지호
-마이그레이션: feat/company-research 에서 이동
-slayer.llm.OpenAIProvider를 사용하도록 리팩터링.
+Owner: Jiho
+Migration: moved from feat/company-research branch.
+Refactored to use slayer.llm.OpenAIProvider.
 """
 
 from __future__ import annotations
@@ -49,14 +49,14 @@ SYNTHESIS_PROMPT = """당신은 한국 취업 준비생을 위한 기업 분석 
 
 
 def synthesize_research(raw_data: dict) -> dict:
-    """수집된 원시 데이터를 LLM으로 합성하여 구조화된 리서치 결과를 반환한다."""
+    """Synthesize raw collected data via LLM and return a structured research result."""
     provider = get_default_provider()
     prompt = SYNTHESIS_PROMPT + json.dumps(raw_data, ensure_ascii=False, indent=2)
 
-    logger.info("LLM 합성 시작")
+    logger.info("LLM synthesis started")
     result_str = provider.generate_json(
         prompt, system_message="기업 분석 전문가. JSON만 출력."
     )
     result = json.loads(result_str)
-    logger.info("LLM 합성 완료")
+    logger.info("LLM synthesis complete")
     return result

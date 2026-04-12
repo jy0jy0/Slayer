@@ -6,6 +6,7 @@ import logging
 import streamlit as st
 
 logger = logging.getLogger(__name__)
+from slayer.ui.events import EventType
 from slayer.ui.styles import GLOBAL_CSS
 from slayer.ui.components import render_page_header, render_info_card, render_news_list
 
@@ -65,10 +66,10 @@ def _run_research_with_status(company_name: str, status_container):
     seen_tool_calls = set()  # Prevent duplicate entries
 
     def on_event(event_type, data):
-        if event_type == "thinking":
+        if event_type == EventType.THINKING:
             status_container.update(label="🤖 Agent is deciding next step...", state="running")
 
-        elif event_type == "tool_call":
+        elif event_type == EventType.TOOL_CALL:
             tool = data.get("tool", "unknown")
             tool_input = data.get("input", {})
             # Deduplicate: same tool + same input = skip
@@ -90,7 +91,7 @@ def _run_research_with_status(company_name: str, status_container):
             })
             _render_steps(status_container, steps)
 
-        elif event_type == "tool_result":
+        elif event_type == EventType.TOOL_RESULT:
             if steps and steps[-1]["status"] == "running":
                 tool = steps[-1]["tool"]
                 summary = _summarize_tool_result(tool, data.get("summary", ""))
@@ -98,7 +99,7 @@ def _run_research_with_status(company_name: str, status_container):
                 steps[-1]["result"] = summary
                 _render_steps(status_container, steps)
 
-        elif event_type == "done":
+        elif event_type == EventType.DONE:
             status_container.update(label="✅ Research complete", state="complete")
 
     loop = asyncio.new_event_loop()

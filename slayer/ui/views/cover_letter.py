@@ -7,6 +7,7 @@ import time
 import streamlit as st
 
 logger = logging.getLogger(__name__)
+from slayer.ui.events import EventType
 from slayer.ui.styles import GLOBAL_CSS
 from slayer.ui.components import render_page_header, render_score_donut
 
@@ -19,9 +20,9 @@ def _run_cover_letter_with_status(input_data, status_container):
     seen = set()
 
     def on_event(event_type, data):
-        if event_type == "thinking":
+        if event_type == EventType.THINKING:
             status_container.update(label="🤖 Agent deciding next action...", state="running")
-        elif event_type == "tool_call":
+        elif event_type == EventType.TOOL_CALL:
             tool = data.get("tool", "")
             key = f"call_{tool}_{len(steps)}"
             if key not in seen:
@@ -30,12 +31,12 @@ def _run_cover_letter_with_status(input_data, status_container):
                 label = data.get("label", tool)
                 steps.append({"icon": icon, "label": label, "status": "running", "result": None})
                 _render_steps(status_container, steps)
-        elif event_type == "tool_result":
+        elif event_type == EventType.TOOL_RESULT:
             if steps and steps[-1]["status"] == "running":
                 steps[-1]["status"] = "done"
                 steps[-1]["result"] = data.get("summary", "")
                 _render_steps(status_container, steps)
-        elif event_type == "done":
+        elif event_type == EventType.DONE:
             status_container.update(label="✅ Cover letter complete", state="complete")
 
     loop = asyncio.new_event_loop()

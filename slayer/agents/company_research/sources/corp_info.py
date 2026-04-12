@@ -1,7 +1,7 @@
-"""금융위원회 기업기본정보 API 소스.
+"""Korea FSC corporate outline API source.
 
-담당: 지호
-마이그레이션: feat/company-research 에서 이동
+Owner: Jiho
+Migration: moved from feat/company-research branch.
 """
 
 from __future__ import annotations
@@ -18,16 +18,16 @@ logger = logging.getLogger(__name__)
 
 
 def _pick_best_match(items: list[dict], company_name: str) -> dict | None:
-    """정확한 이름 매칭 우선, 없으면 직원 수 최대 기업 선택."""
+    """Prefer exact name match; otherwise pick the entry with the largest employee count."""
     if not items:
         return None
 
-    # 1) 정확 매칭
+    # 1) Exact match
     for item in items:
         if item.get("corpNm", "").strip() == company_name.strip():
             return item
 
-    # 2) 직원 수 최대
+    # 2) Largest employee count
     def _emp_count(item: dict) -> int:
         try:
             return int(item.get("enpEmpeCnt", "0").replace(",", ""))
@@ -38,7 +38,7 @@ def _pick_best_match(items: list[dict], company_name: str) -> dict | None:
 
 
 class CorpInfoSource(BaseSource):
-    """금융위원회 기업기본정보 API를 통해 기업 정보를 수집한다."""
+    """Collect corporate information via the Korea FSC corporate outline API."""
 
     @property
     def source_name(self) -> str:
@@ -46,8 +46,8 @@ class CorpInfoSource(BaseSource):
 
     async def fetch(self, company_name: str, **kwargs) -> dict:
         if not DATA_GO_KR_API_KEY:
-            logger.warning("DATA_GO_KR_API_KEY가 설정되지 않았습니다.")
-            return {"error": "API 키 미설정"}
+            logger.warning("DATA_GO_KR_API_KEY is not configured.")
+            return {"error": "API key not configured"}
 
         params = {
             "serviceKey": DATA_GO_KR_API_KEY,
@@ -77,12 +77,12 @@ class CorpInfoSource(BaseSource):
                 items = [items]
 
             if not items:
-                logger.warning("기업 기본정보 조회 결과 없음: %s", company_name)
-                return {"error": "조회 결과 없음"}
+                logger.warning("No corporate info results: %s", company_name)
+                return {"error": "No results"}
 
             best = _pick_best_match(items, company_name)
             if not best:
-                return {"error": "매칭 기업 없음"}
+                return {"error": "No matching company"}
 
             result = {
                 "corp_name": best.get("corpNm", ""),
@@ -100,14 +100,14 @@ class CorpInfoSource(BaseSource):
                 "fss_corp_id": best.get("fssCrpId", ""),
             }
 
-            logger.info("기업 기본정보 수집 완료: %s", company_name)
+            logger.info("Corporate info collection complete: %s", company_name)
             return result
 
         except httpx.HTTPStatusError as exc:
             logger.error(
-                "기업 기본정보 API 오류 (%d): %s", exc.response.status_code, exc
+                "Corporate info API error (%d): %s", exc.response.status_code, exc
             )
             return {"error": f"HTTP {exc.response.status_code}"}
         except Exception as exc:
-            logger.error("기업 기본정보 수집 실패: %s", exc)
+            logger.error("Corporate info collection failed: %s", exc)
             return {"error": str(exc)}

@@ -1,7 +1,7 @@
 """BaseSource ABC.
 
-담당: 지호
-마이그레이션: feat/company-research 에서 이동
+Owner: Jiho
+Migration: moved from feat/company-research branch.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 
 
 class BaseSource(ABC):
-    """기업 정보 수집 소스의 추상 베이스 클래스."""
+    """Abstract base class for company-information collection sources."""
 
     @property
     @abstractmethod
