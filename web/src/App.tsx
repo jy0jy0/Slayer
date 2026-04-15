@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
-import { supabase } from './supabaseClient';
-import { useGoogleTokens } from './hooks/useGoogleTokens';
-import Login from './Login';
-import Layout from './components/Layout';
-import PasswordReset from './components/PasswordReset';
-import type { Session } from '@supabase/supabase-js';
-import './App.css';
+import { useState, useEffect, useRef } from "react";
+import { supabase } from "./supabaseClient";
+import { useGoogleTokens } from "./hooks/useGoogleTokens";
+import Login from "./Login";
+import Layout from "./components/Layout";
+import PasswordReset from "./components/PasswordReset";
+import type { Session } from "@supabase/supabase-js";
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -20,18 +19,22 @@ function App() {
   useEffect(() => {
     // URL에 recovery 파라미터가 있으면 즉시 복구 모드 활성화 (PKCE 코드 교환 전에 감지)
     const hash = window.location.hash;
-    const hashParams = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : '');
-    if (hashParams.get('type') === 'recovery') {
+    const hashParams = new URLSearchParams(
+      hash.startsWith("#") ? hash.slice(1) : "",
+    );
+    if (hashParams.get("type") === "recovery") {
       recoveryMode.current = true;
       setShowPasswordReset(true);
     }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
-      if (event === 'PASSWORD_RECOVERY') {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === "PASSWORD_RECOVERY") {
         recoveryMode.current = true;
         setSession(newSession);
         setShowPasswordReset(true);
-      } else if (event === 'SIGNED_OUT') {
+      } else if (event === "SIGNED_OUT") {
         recoveryMode.current = false;
         setSession(null);
         setShowPasswordReset(false);
@@ -49,7 +52,9 @@ function App() {
 
     const checkSession = async () => {
       try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        const {
+          data: { session: currentSession },
+        } = await supabase.auth.getSession();
         if (currentSession) setSession(currentSession);
         else setSession(null);
       } finally {
@@ -58,7 +63,9 @@ function App() {
     };
 
     checkSession();
-    return () => { subscription.unsubscribe(); };
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   if (loading) {

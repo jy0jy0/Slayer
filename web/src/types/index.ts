@@ -40,7 +40,39 @@ export const STATUS_META: Record<AppStatus, { label: string; color: string; bord
 }
 
 export const BOARD_COLUMNS: AppStatus[] = [
-  'scrapped', 'reviewing', 'applied', 'in_progress', 'final_pass', 'rejected',
+  'scrapped', 'reviewing', 'applied', 'in_progress', 'final_pass', 'rejected', 'withdrawn',
+]
+
+export interface BoardGroup {
+  key: string
+  label: string
+  statuses: AppStatus[]
+  accentColor: string   // tailwind bg color class for top border
+  bgClass: string
+}
+
+export const BOARD_GROUPS: BoardGroup[] = [
+  {
+    key: 'prep',
+    label: '준비 중',
+    statuses: ['scrapped', 'reviewing'],
+    accentColor: '#3b82f6',
+    bgClass: 'bg-blue-50/60 border-blue-200',
+  },
+  {
+    key: 'active',
+    label: '진행 중',
+    statuses: ['applied', 'in_progress'],
+    accentColor: '#f59e0b',
+    bgClass: 'bg-amber-50/60 border-amber-200',
+  },
+  {
+    key: 'done',
+    label: '결과',
+    statuses: ['final_pass', 'rejected', 'withdrawn'],
+    accentColor: '#6b7280',
+    bgClass: 'bg-zinc-50 border-zinc-200',
+  },
 ]
 
 // ─── Company Research ────────────────────────────────────────────────────────

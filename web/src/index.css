@@ -1,13 +1,310 @@
 @import "tailwindcss";
 
-body {
-  margin: 0;
-  background-color: #ffffff;
-  color: #09090b;
-  font-family: system-ui, -apple-system, sans-serif;
-  -webkit-font-smoothing: antialiased;
+/* ──────────────────────────────────────────────────────────
+   Global Theme Tokens
+────────────────────────────────────────────────────────── */
+:root {
+    --app-bg: #f7f8fa;
+    --surface-1: rgba(255, 255, 255, 0.88);
+    --surface-2: rgba(255, 255, 255, 0.72);
+    --surface-3: rgba(255, 255, 255, 0.56);
+
+    --border-soft: rgba(161, 161, 170, 0.22);
+    --border-strong: rgba(161, 161, 170, 0.36);
+
+    --text-strong: #18181b;
+    --text-default: #27272a;
+    --text-muted: #71717a;
+
+    --accent: #65a30d;
+    --accent-strong: #4d7c0f;
+
+    --danger-bg: rgba(254, 226, 226, 0.8);
+    --danger-border: rgba(248, 113, 113, 0.35);
+    --danger-text: #b91c1c;
+
+    --warn-bg: rgba(254, 243, 199, 0.82);
+    --warn-border: rgba(245, 158, 11, 0.35);
+    --warn-text: #92400e;
+
+    --success-bg: rgba(220, 252, 231, 0.82);
+    --success-border: rgba(74, 222, 128, 0.34);
+    --success-text: #166534;
+
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-2xl: 20px;
+
+    --shadow-soft: 0 2px 10px rgba(24, 24, 27, 0.06);
+    --shadow-card: 0 6px 24px rgba(24, 24, 27, 0.08);
 }
 
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #f4f4f5; }
-::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 3px; }
+/* ──────────────────────────────────────────────────────────
+   Base
+────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+    width: 100%;
+    min-height: 100%;
+}
+
+body {
+    margin: 0;
+    background:
+        radial-gradient(
+            1200px 500px at 100% -120px,
+            rgba(132, 204, 22, 0.08),
+            transparent 60%
+        ),
+        radial-gradient(
+            900px 420px at -100px 100%,
+            rgba(59, 130, 246, 0.06),
+            transparent 65%
+        ),
+        var(--app-bg);
+    color: var(--text-default);
+    font-family:
+        "Inter",
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Roboto,
+        sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+/* Keep root full-width (avoid old fixed app width style) */
+#root {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    text-align: initial;
+}
+
+/* ──────────────────────────────────────────────────────────
+   Shared Layout Helpers
+────────────────────────────────────────────────────────── */
+.page-shell {
+    width: 100%;
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 1.25rem 1.5rem 1.5rem;
+}
+
+.page-header {
+    margin-bottom: 1rem;
+}
+
+.page-title {
+    font-size: 1.125rem;
+    line-height: 1.35;
+    font-weight: 700;
+    color: var(--text-strong);
+    letter-spacing: -0.01em;
+}
+
+.page-subtitle {
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--text-muted);
+}
+
+/* translucent card surfaces */
+.surface-card {
+    background: var(--surface-1);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-xl);
+    backdrop-filter: blur(8px);
+    box-shadow: var(--shadow-soft);
+}
+
+.surface-card-soft {
+    background: var(--surface-2);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-lg);
+    backdrop-filter: blur(8px);
+}
+
+.surface-inline {
+    background: var(--surface-3);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+}
+
+/* unified semantic banners */
+.alert-danger {
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    color: var(--danger-text);
+    border-radius: var(--radius-lg);
+}
+
+.alert-warn {
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    color: var(--warn-text);
+    border-radius: var(--radius-lg);
+}
+
+.alert-success {
+    background: var(--success-bg);
+    border: 1px solid var(--success-border);
+    color: var(--success-text);
+    border-radius: var(--radius-lg);
+}
+
+/* unified interactive affordance */
+.ui-focusable {
+    transition:
+        border-color 0.18s ease,
+        background-color 0.18s ease,
+        box-shadow 0.18s ease;
+}
+
+.ui-focusable:focus-visible {
+    outline: none;
+    border-color: rgba(132, 204, 22, 0.78);
+    box-shadow: 0 0 0 3px rgba(190, 242, 100, 0.3);
+}
+
+/* subtle hover lift for cards/buttons */
+.ui-hover-lift {
+    transition:
+        transform 0.16s ease,
+        box-shadow 0.16s ease,
+        border-color 0.16s ease;
+}
+
+.ui-hover-lift:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-card);
+    border-color: var(--border-strong);
+}
+
+/* ──────────────────────────────────────────────────────────
+   Scrollbar
+────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: rgba(244, 244, 245, 0.9);
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(161, 161, 170, 0.55);
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(113, 113, 122, 0.7);
+}
+
+/* ──────────────────────────────────────────────────────────
+   Legacy Login / Utility (kept for compatibility)
+────────────────────────────────────────────────────────── */
+.login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 90vh;
+}
+
+.login-card {
+    background: #ffffff;
+    padding: 3rem 2.5rem;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+    width: 100%;
+    max-width: 380px;
+    border: 1px solid #e4e4e7;
+}
+
+.logo-section {
+    margin-bottom: 2rem;
+}
+
+.logo-section .clover {
+    font-size: 3rem;
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.logo-section h1 {
+    margin: 0 0 0.25rem;
+    font-size: 1.75rem;
+    color: #09090b;
+    letter-spacing: -0.02em;
+}
+
+.logo-section p {
+    color: #71717a;
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.google-login-btn {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 44px;
+    padding: 0;
+    background-color: #ffffff;
+    color: #1f1f1f;
+    border: 1px solid #747775;
+    border-radius: 4px;
+    font-family: "Roboto", sans-serif;
+    font-weight: 500;
+    font-size: 14px;
+    cursor: pointer;
+    transition:
+        background-color 0.2s,
+        box-shadow 0.2s;
+    overflow: hidden;
+}
+
+.google-login-btn:hover {
+    background-color: #f7f8f8;
+    border-color: #747775;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.google-logo-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    min-width: 44px;
+    height: 100%;
+    padding: 0 12px;
+}
+
+.google-btn-text {
+    flex: 1;
+    text-align: center;
+    padding-right: 12px;
+}
+
+.footer-text {
+    margin-top: 1.5rem;
+    font-size: 0.7rem;
+    color: #a1a1aa;
+    line-height: 1.4;
+}
+
+.loading-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}

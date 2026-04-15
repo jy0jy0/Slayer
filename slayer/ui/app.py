@@ -27,8 +27,28 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+from slayer.ui.auth import (
+    handle_oauth_callback,
+    is_logged_in,
+    render_login_page,
+    restore_session,
+)
+
+# OAuth 콜백 처리 (FastAPI /auth/callback이 hash → query param 변환해서 넘겨줌)
+if handle_oauth_callback():
+    st.rerun()
+
+# 새로고침 후 uid query param으로 세션 복원
+restore_session()
+
+# 로그인 안 된 상태면 로그인 페이지만 표시
+if not is_logged_in():
+    render_login_page()
+    st.stop()
+
 # 사이드바 네비게이션
 from slayer.ui.views import dashboard, research, matching, optimize, cover_letter, interview_prep
+from slayer.ui.views import gmail_monitor
 
 pages = {
     "Dashboard": dashboard,
@@ -37,6 +57,7 @@ pages = {
     "Resume Optimize": optimize,
     "Cover Letter": cover_letter,
     "Interview Prep": interview_prep,
+    "Gmail Monitor": gmail_monitor,
 }
 
 # 사이드바 네비 초기화
@@ -50,6 +71,7 @@ NAV_ITEMS = [
     ("✨", "Resume Optimize"),
     ("✍️", "Cover Letter"),
     ("🎯", "Interview Prep"),
+    ("📬", "Gmail Monitor"),
 ]
 
 with st.sidebar:
@@ -65,7 +87,16 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
-    st.caption("Status: Ready")
+    email = st.session_state.get("email", "")
+    token_saved = st.session_state.get("token_saved", False)
+    st.caption(f"✅ {email}" if email else "✅ 로그인됨")
+    if token_saved:
+        st.caption("🔑 Gmail 연동됨")
+    if st.button("로그아웃", use_container_width=True):
+        for key in ["logged_in", "user_id", "email", "access_token", "token_saved"]:
+            st.session_state.pop(key, None)
+        st.query_params.clear()
+        st.rerun()
 
 selection = st.session_state["nav_page"]
 

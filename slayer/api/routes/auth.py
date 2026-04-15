@@ -118,16 +118,25 @@ class GoogleTokenRequest(BaseModel):
     프론트엔드에서 supabase.auth.onAuthStateChange 콜백으로 받은 값을 전송.
 
     Fields:
-        user_id:        public.users UUID (Supabase auth.users.id 와 동일)
-        access_token:   Google OAuth access token (session.provider_token)
-        refresh_token:  Google OAuth refresh token (session.provider_refresh_token, 선택)
-        expires_at:     access token 만료 시각 ISO8601 (선택)
+        user_id:                public.users UUID (Supabase auth.users.id 와 동일)
+        access_token:           Google OAuth access token (session.provider_token)
+        refresh_token:          Google OAuth refresh token (session.provider_refresh_token, 선택)
+        expires_at:             access token 만료 시각 ISO8601 (선택)
+        email:                  사용자 이메일 (최초 로그인 시 users 레코드 자동 생성에 사용)
+        name:                   사용자 이름 (최초 로그인 시 users 레코드 자동 생성에 사용)
+        google_id:              Google sub / provider_id (최초 로그인 시 사용)
+        supabase_refresh_token: Supabase 세션 refresh_token (토큰 자동 갱신에 사용)
     """
 
     user_id: str
     access_token: str
     refresh_token: Optional[str] = None
     expires_at: Optional[str] = None  # ISO8601
+    # 최초 로그인 시 public.users 자동 생성용
+    email: Optional[str] = None
+    name: Optional[str] = None
+    google_id: Optional[str] = None
+    supabase_refresh_token: Optional[str] = None
 
 
 @router.post("/google-token", status_code=200)
@@ -135,6 +144,7 @@ async def save_google_token(req: GoogleTokenRequest):
     """Google OAuth 토큰을 public.users 에 저장.
 
     Supabase OAuth 로그인 직후 프론트에서 한 번 호출.
+    users 레코드가 없으면 자동 생성 (email, name, google_id 필요).
     이후 Gmail / Calendar API 호출 시 이 토큰을 사용.
     """
     if not is_db_available():
@@ -155,15 +165,31 @@ async def save_google_token(req: GoogleTokenRequest):
         except ValueError:
             raise HTTPException(status_code=400, detail="유효하지 않은 expires_at 형식 (ISO8601 필요)")
 
+    created = False
     try:
         with get_session() as session:
             user = session.query(User).filter_by(id=user_uuid).first()
             if not user:
-                raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+                # 최초 Google OAuth 로그인 — public.users 레코드 자동 생성
+                if not req.email or not req.google_id:
+                    raise HTTPException(
+                        status_code=404,
+                        detail="사용자를 찾을 수 없습니다. email과 google_id를 함께 전송해 주세요.",
+                    )
+                user = User(
+                    id=user_uuid,
+                    google_id=req.google_id,
+                    email=req.email,
+                    name=req.name or req.email.split("@")[0],
+                )
+                session.add(user)
+                created = True
 
             user.google_access_token = req.access_token
             if req.refresh_token:
                 user.google_refresh_token = req.refresh_token
+            if req.supabase_refresh_token:
+                user.supabase_refresh_token = req.supabase_refresh_token
             if expires_at:
                 user.token_expires_at = expires_at
             user.updated_at = datetime.now(timezone.utc)
@@ -176,6 +202,7 @@ async def save_google_token(req: GoogleTokenRequest):
     return {
         "success": True,
         "user_id": req.user_id,
+        "created": created,
         "has_refresh_token": req.refresh_token is not None,
         "expires_at": req.expires_at,
     }
