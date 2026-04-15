@@ -70,7 +70,7 @@ async def parse_jd(req: JDParseRequest):
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None,
-            lambda: _run_sync(scrape_jd(req.url.strip()))
+            lambda: scrape_jd(req.url.strip())
         )
         return result.model_dump()
     except Exception as e:

@@ -150,13 +150,14 @@ def save_parsed_resume(
     file_type: str,
     file_url: str,
     parsed_resume,
-) -> Any:
-    """이력서 파싱 결과를 resumes 테이블에 저장."""
+) -> uuid.UUID | None:
+    """이력서 파싱 결과를 resumes 테이블에 저장. resume UUID 반환."""
     from slayer.db.models import Resume
 
+    resume_id = uuid.uuid4()
     with get_session() as session:
         resume = Resume(
-            id=uuid.uuid4(),
+            id=resume_id,
             user_id=uuid.UUID(user_id),
             file_name=file_name,
             file_type=file_type,
@@ -167,7 +168,7 @@ def save_parsed_resume(
         )
         session.add(resume)
         logger.info("Saved parsed resume: %s", file_name)
-        return resume
+    return resume_id
 
 
 def save_application(req, company_id: uuid.UUID | None, application_id: uuid.UUID | None = None) -> tuple[uuid.UUID, datetime] | None:
