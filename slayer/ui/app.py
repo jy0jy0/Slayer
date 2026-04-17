@@ -28,11 +28,12 @@ st.set_page_config(
 )
 
 # 사이드바 네비게이션
-from slayer.ui.views import dashboard, research, matching, optimize, cover_letter, interview_prep
+from slayer.ui.views import dashboard, research, jd_parser, matching, optimize, cover_letter, interview_prep
 
 pages = {
     "Dashboard": dashboard,
     "Company Research": research,
+    "JD Parser": jd_parser,
     "JD-Resume Match": matching,
     "Resume Optimize": optimize,
     "Cover Letter": cover_letter,
@@ -46,6 +47,7 @@ if "nav_page" not in st.session_state:
 NAV_ITEMS = [
     ("🏠", "Dashboard"),
     ("🏢", "Company Research"),
+    ("📄", "JD Parser"),
     ("📊", "JD-Resume Match"),
     ("✨", "Resume Optimize"),
     ("✍️", "Cover Letter"),

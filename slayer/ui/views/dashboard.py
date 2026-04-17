@@ -15,8 +15,8 @@ def render():
 
     cards = [
         ("🏢", "Company Research", "Auto-collect and analyze company info, financials, and latest news."),
+        ("📄", "JD Parser", "Parse job descriptions from JobKorea or Wanted URLs into structured data."),
         ("📊", "JD-Resume Match", "Analyze ATS matching score between job description and resume."),
-        ("✨", "Resume Optimize", "Iteratively optimize resume to reach target ATS score."),
     ]
 
     for col, (icon, title, desc) in zip(cols, cards):
@@ -31,6 +31,7 @@ def render():
 
     row2 = st.columns(3)
     row2_cards = [
+        ("✨", "Resume Optimize", "Iteratively optimize resume to reach target ATS score."),
         ("✍️", "Cover Letter", "Generate tailored cover letters based on JD, resume, and company research."),
         ("🎯", "Interview Prep", "Generate tailored interview questions by category."),
     ]
@@ -45,19 +46,19 @@ def render():
             </div>
             """)
 
-    with row2[2]:
-        st.html("""
-        <div class="sl-card" style="padding:20px; min-height:140px;">
-            <h3 style="margin:0 0 12px 0; font-size:16px; color:#888;">Quick Start</h3>
-            <div style="color:#b0b0b0; font-size:13px; line-height:2;">
-                <b style="color:#3b82f6;">1.</b> Company Research → Analyze target company<br>
-                <b style="color:#3b82f6;">2.</b> JD-Resume Match → Check ATS score<br>
-                <b style="color:#3b82f6;">3.</b> Resume Optimize → Improve score<br>
-                <b style="color:#3b82f6;">4.</b> Cover Letter → Generate tailored letter<br>
-                <b style="color:#3b82f6;">5.</b> Interview Prep → Prepare for interviews
-            </div>
+    st.html("""
+    <div class="sl-card" style="padding:20px; margin-top:8px;">
+        <h3 style="margin:0 0 12px 0; font-size:16px; color:#888;">Quick Start</h3>
+        <div style="color:#b0b0b0; font-size:13px; line-height:2;">
+            <b style="color:#3b82f6;">1.</b> Company Research → Analyze target company<br>
+            <b style="color:#3b82f6;">2.</b> JD Parser → Parse job description from URL<br>
+            <b style="color:#3b82f6;">3.</b> JD-Resume Match → Check ATS score<br>
+            <b style="color:#3b82f6;">4.</b> Resume Optimize → Improve score<br>
+            <b style="color:#3b82f6;">5.</b> Cover Letter → Generate tailored letter<br>
+            <b style="color:#3b82f6;">6.</b> Interview Prep → Prepare for interviews
         </div>
-        """)
+    </div>
+    """)
 
     st.markdown("")
     st.caption("👈 Select a feature from the sidebar. Results auto-forward to the next step.")
