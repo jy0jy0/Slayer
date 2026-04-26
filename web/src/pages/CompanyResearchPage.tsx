@@ -1,26 +1,38 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Search,
   Building2,
   TrendingUp,
   Newspaper,
   ArrowRight,
+  Database,
 } from "lucide-react";
-import { runCompanyResearch } from "../services/api";
+import { runCompanyResearch, fetchCompanies, fetchCompany } from "../services/api";
 import { useAppContext } from "../context/AppContext";
 import type { LayoutPageKey } from "../components/Layout";
+import type { CompanyPreview } from "../types";
 
 interface Props {
   onNavigate: (page: LayoutPageKey) => void;
 }
 
 export default function CompanyResearchPage({ onNavigate }: Props) {
-  const { companyResearch, setCompanyResearch } = useAppContext();
+  const { companyResearch, setCompanyResearch, setCompanyId } = useAppContext();
   const [company, setCompany] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [companyList, setCompanyList] = useState<CompanyPreview[]>([]);
+  const [listLoading, setListLoading] = useState(false);
+  const [showList, setShowList] = useState(false);
 
   const result = companyResearch;
+
+  useEffect(() => {
+    if (showList && companyList.length === 0) {
+      setListLoading(true);
+      fetchCompanies().then(setCompanyList).finally(() => setListLoading(false));
+    }
+  }, [showList]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,8 +42,24 @@ export default function CompanyResearchPage({ onNavigate }: Props) {
     try {
       const data = await runCompanyResearch(company.trim());
       setCompanyResearch(data);
+      setCompanyId(data.company_id ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "리서치 실패");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelectExisting = async (id: string) => {
+    setError("");
+    setLoading(true);
+    try {
+      const data = await fetchCompany(id);
+      setCompanyResearch(data);
+      setCompanyId(id);
+      setShowList(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "기업 정보 불러오기 실패");
     } finally {
       setLoading(false);
     }
@@ -74,7 +102,33 @@ export default function CompanyResearchPage({ onNavigate }: Props) {
         >
           {loading ? "수집 중..." : "리서치"}
         </button>
+        <button
+          type="button"
+          onClick={() => setShowList((v) => !v)}
+          title="기존 리서치 기업 선택"
+          className="px-3 py-2.5 rounded-xl border border-zinc-200 hover:border-lime-300 hover:bg-lime-50 text-zinc-500 hover:text-lime-700 transition-colors shrink-0"
+        >
+          <Database size={15} />
+        </button>
       </form>
+
+      {/* 기존 기업 목록 */}
+      {showList && (
+        <div className="surface-card p-3 mb-4">
+          <p className="text-xs font-semibold text-zinc-500 mb-2">리서치된 기업</p>
+          {listLoading && <p className="text-xs text-zinc-400 py-3 text-center">불러오는 중...</p>}
+          {!listLoading && companyList.length === 0 && <p className="text-xs text-zinc-400 py-3 text-center">저장된 기업 정보가 없습니다.</p>}
+          <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
+            {companyList.map((item) => (
+              <button key={item.id} onClick={() => handleSelectExisting(item.id)} disabled={loading}
+                className="w-full text-left p-2.5 rounded-lg border border-zinc-200 hover:border-lime-300 hover:bg-lime-50 transition-colors disabled:opacity-40">
+                <p className="text-xs font-semibold text-zinc-900">{item.name}</p>
+                <p className="text-[10px] text-zinc-400">{item.industry ?? ""} {item.researched_at ? `· ${item.researched_at.slice(0, 10)}` : ""}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="alert-danger px-4 py-3 text-sm mb-4">{error}</div>

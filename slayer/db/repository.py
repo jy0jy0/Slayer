@@ -31,8 +31,8 @@ def _safe_db_op(func):
 
 
 @_safe_db_op
-def save_company(research_output) -> Any:
-    """Save or update company from CompanyResearchOutput."""
+def save_company(research_output) -> uuid.UUID | None:
+    """Save or update company from CompanyResearchOutput. UUID 반환."""
     from slayer.db.models import Company
 
     with get_session() as session:
@@ -43,7 +43,7 @@ def save_company(research_output) -> Any:
             "name_en": research_output.company_name_en,
             "summary": research_output.summary,
             "data_sources": research_output.data_sources,
-            "researched_at": datetime.now(),
+            "researched_at": datetime.now(timezone.utc),
         }
 
         if research_output.basic_info:
@@ -65,16 +65,17 @@ def save_company(research_output) -> Any:
             data["recent_news"] = [n.model_dump() for n in research_output.recent_news]
 
         if existing:
+            company_id = existing.id
             for k, v in data.items():
                 if v is not None and hasattr(existing, k):
                     setattr(existing, k, v)
             logger.info("Updated company: %s", research_output.company_name)
-            return existing
         else:
-            company = Company(id=uuid.uuid4(), **data)
+            company_id = uuid.uuid4()
+            company = Company(id=company_id, **data)
             session.add(company)
             logger.info("Saved new company: %s", research_output.company_name)
-            return company
+    return company_id
 
 
 @_safe_db_op
@@ -107,29 +108,64 @@ def save_agent_log(
 
 
 @_safe_db_op
-def save_match_result(jd_json: str, resume_json: str, match_result) -> Any:
-    """Save matching result. Stores JD, resume data, and ATS analysis."""
-    import json as _json
-    from slayer.db.models import Application, Company
+def save_job_posting(jd_schema, source_url: str = "") -> uuid.UUID | None:
+    """JD 파싱 결과를 job_postings 테이블에 저장. UUID 반환."""
+    from datetime import date as _date
+    from slayer.db.models import JobPosting
 
-    with get_session() as session:
-        # Try to find company from JD data
-        company_id = None
+    job_id = uuid.uuid4()
+    company_id = upsert_company_by_name(jd_schema.company) if jd_schema.company else None
+
+    deadline = None
+    if getattr(jd_schema, "deadline", None):
         try:
-            jd_data = _json.loads(jd_json) if isinstance(jd_json, str) else jd_json
-            company_name = jd_data.get("company", "")
-            if company_name:
-                company = session.query(Company).filter_by(name=company_name).first()
-                if company:
-                    company_id = company.id
-        except Exception:
+            deadline = _date.fromisoformat(jd_schema.deadline)
+        except (ValueError, TypeError):
             pass
 
+    with get_session() as session:
+        job = JobPosting(
+            id=job_id,
+            company_id=company_id,
+            source_url=source_url,
+            title=jd_schema.title or "",
+            position=jd_schema.position or "",
+            skills=getattr(jd_schema, "required_skills", None) or [],
+            deadline=deadline,
+            parsed_data=jd_schema.model_dump(),
+        )
+        session.add(job)
+        logger.info("Saved job posting: %s @ %s", jd_schema.position, jd_schema.company)
+    return job_id
+
+
+@_safe_db_op
+def save_match_result(
+    match_result,
+    user_id: str | None = None,
+    job_posting_id: uuid.UUID | None = None,
+    resume_id: uuid.UUID | None = None,
+    company_name: str | None = None,
+) -> uuid.UUID | None:
+    """매칭 결과를 applications 테이블에 draft(reviewing) 레코드로 저장. UUID 반환."""
+    from slayer.db.models import Application
+
+    _placeholder = uuid.UUID("00000000-0000-0000-0000-000000000000")
+    user_uuid = uuid.UUID(user_id) if user_id else _placeholder
+
+    company_id = None
+    if company_name:
+        company_id = upsert_company_by_name(company_name)
+
+    app_id = uuid.uuid4()
+    with get_session() as session:
         app = Application(
-            id=uuid.uuid4(),
-            user_id=uuid.UUID('00000000-0000-0000-0000-000000000000'),  # still placeholder for user
-            company_id=company_id or uuid.UUID('00000000-0000-0000-0000-000000000000'),
-            status='reviewing',
+            id=app_id,
+            user_id=user_uuid,
+            company_id=company_id or _placeholder,
+            job_posting_id=job_posting_id,
+            resume_id=resume_id,
+            status="reviewing",
             ats_score=match_result.ats_score,
             score_breakdown=match_result.score_breakdown,
             matched_keywords=match_result.matched_keywords,
@@ -139,8 +175,29 @@ def save_match_result(jd_json: str, resume_json: str, match_result) -> Any:
             gap_summary=match_result.gap_summary,
         )
         session.add(app)
-        logger.info("Saved match result: ATS %.0f", match_result.ats_score)
-        return app
+        logger.info("Saved match result: ATS %.0f → application %s", match_result.ats_score, app_id)
+    return app_id
+
+
+def update_application_fields(application_id: uuid.UUID, **fields) -> bool:
+    """Application 레코드의 특정 필드를 업데이트. 성공 시 True."""
+    if not is_db_available():
+        return False
+    try:
+        from slayer.db.models import Application
+        with get_session() as session:
+            app = session.query(Application).filter_by(id=application_id).first()
+            if not app:
+                logger.warning("update_application_fields: application %s not found", application_id)
+                return False
+            for k, v in fields.items():
+                if hasattr(app, k):
+                    setattr(app, k, v)
+            logger.info("Updated application %s: %s", application_id, list(fields.keys()))
+        return True
+    except Exception as e:
+        logger.warning("update_application_fields failed: %s", e)
+        return False
 
 
 @_safe_db_op

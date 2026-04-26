@@ -129,6 +129,39 @@ async def upload_resume(
     }
 
 
+@router.get("/list")
+async def list_resumes(user_id: str = Query(..., description="사용자 UUID"), limit: int = Query(50, ge=1, le=200)):
+    """사용자의 이력서 목록 조회."""
+    if not is_db_available():
+        raise HTTPException(status_code=503, detail="DB 연결 없음")
+
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="유효하지 않은 user_id 형식입니다.")
+
+    from slayer.db.models import Resume
+    from slayer.db.session import get_session
+
+    with get_session() as session:
+        rows = (
+            session.query(Resume)
+            .filter_by(user_id=user_uuid)
+            .order_by(Resume.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "id": str(r.id),
+                "file_name": r.file_name,
+                "parse_status": r.parse_status,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+
+
 @router.get("/{resume_id}")
 async def get_resume(resume_id: str):
     """파싱된 이력서 조회."""

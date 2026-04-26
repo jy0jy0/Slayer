@@ -9,7 +9,7 @@ interface Props {
 }
 
 export default function OptimizePage({ onNavigate }: Props) {
-  const { jd, resume, matchResult, setOptimizeResult, optimizeResult } =
+  const { jd, resume, matchResult, setOptimizeResult, optimizeResult, applicationId } =
     useAppContext();
 
   const [targetScore, setTargetScore] = useState(80);
@@ -30,7 +30,7 @@ export default function OptimizePage({ onNavigate }: Props) {
         match_result: matchResult!,
         target_ats_score: targetScore,
         max_iterations: maxIter,
-      });
+      }, applicationId);
       setOptimizeResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "최적화 실패");

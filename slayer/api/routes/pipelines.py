@@ -43,12 +43,16 @@ async def company_research(req: CompanyResearchRequest):
         raise HTTPException(status_code=400, detail="company_name이 비어있습니다.")
     try:
         from slayer.agents.company_research.agent import run_company_research_streaming
+        from slayer.db import repository
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None,
             lambda: _run_sync(run_company_research_streaming(req.company_name.strip()))
         )
-        return result.model_dump()
+        company_id = repository.save_company(result)
+        data = result.model_dump()
+        data["company_id"] = str(company_id) if company_id else None
+        return data
     except Exception as e:
         logger.error("Company research failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
@@ -58,6 +62,7 @@ async def company_research(req: CompanyResearchRequest):
 
 class JDParseRequest(BaseModel):
     url: str
+    user_id: str | None = None
 
 
 @router.post("/jd/parse")
@@ -66,13 +71,17 @@ async def parse_jd(req: JDParseRequest):
     if not req.url.strip():
         raise HTTPException(status_code=400, detail="url이 비어있습니다.")
     try:
+        from slayer.db import repository
         from slayer.pipelines.jd_parser.scraper import scrape_jd
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None,
             lambda: scrape_jd(req.url.strip())
         )
-        return result.model_dump()
+        job_posting_id = repository.save_job_posting(result, source_url=req.url.strip())
+        data = result.model_dump()
+        data["job_posting_id"] = str(job_posting_id) if job_posting_id else None
+        return data
     except Exception as e:
         logger.error("JD parse failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
@@ -83,12 +92,16 @@ async def parse_jd(req: JDParseRequest):
 class MatchRequest(BaseModel):
     jd: dict[str, Any]
     resume: dict[str, Any]
+    user_id: str | None = None
+    job_posting_id: str | None = None
+    resume_id: str | None = None
 
 
 @router.post("/match")
 async def match_jd_resume(req: MatchRequest):
     """JD ↔ 이력서 ATS 매칭 분석."""
     try:
+        from slayer.db import repository
         from slayer.pipelines.jd_resume_matcher import match_jd_resume as _match
         from slayer.schemas import JDSchema, ParsedResume
 
@@ -99,7 +112,17 @@ async def match_jd_resume(req: MatchRequest):
             None,
             lambda: _run_sync(_match(jd, resume))
         )
-        return result.model_dump()
+        import uuid as _uuid
+        application_id = repository.save_match_result(
+            result,
+            user_id=req.user_id,
+            job_posting_id=_uuid.UUID(req.job_posting_id) if req.job_posting_id else None,
+            resume_id=_uuid.UUID(req.resume_id) if req.resume_id else None,
+            company_name=jd.company,
+        )
+        data = result.model_dump()
+        data["application_id"] = str(application_id) if application_id else None
+        return data
     except Exception as e:
         logger.error("Match failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
@@ -113,6 +136,7 @@ class OptimizeRequest(BaseModel):
     match_result: dict[str, Any]
     target_ats_score: float = 80.0
     max_iterations: int = 3
+    application_id: str | None = None
 
 
 @router.post("/optimize")
@@ -120,6 +144,7 @@ async def optimize_resume(req: OptimizeRequest):
     """이력서 최적화 에이전트 실행."""
     try:
         from slayer.agents.resume_optimizer.agent import optimize_resume_streaming
+        from slayer.db import repository
         from slayer.schemas import JDSchema, MatchResult, ParsedResume, ResumeOptimizationInput
 
         resume = ParsedResume(**req.parsed_resume)
@@ -137,6 +162,12 @@ async def optimize_resume(req: OptimizeRequest):
             None,
             lambda: _run_sync(optimize_resume_streaming(input_data))
         )
+        if req.application_id:
+            import uuid as _uuid
+            repository.update_application_fields(
+                _uuid.UUID(req.application_id),
+                optimization_data=result.model_dump(),
+            )
         return result.model_dump()
     except Exception as e:
         logger.error("Optimize failed: %s", e)
@@ -150,6 +181,7 @@ class CoverLetterRequest(BaseModel):
     jd: dict[str, Any]
     company_research: dict[str, Any] | None = None
     match_result: dict[str, Any] | None = None
+    application_id: str | None = None
 
 
 @router.post("/cover-letter")
@@ -157,6 +189,7 @@ async def generate_cover_letter(req: CoverLetterRequest):
     """자소서 생성 에이전트 실행."""
     try:
         from slayer.agents.cover_letter.agent import generate_cover_letter_streaming
+        from slayer.db import repository
         from slayer.schemas import (
             CoverLetterInput, CompanyResearchOutput, JDSchema, MatchResult, ParsedResume
         )
@@ -177,6 +210,17 @@ async def generate_cover_letter(req: CoverLetterRequest):
             None,
             lambda: _run_sync(generate_cover_letter_streaming(input_data))
         )
+        if req.application_id:
+            import uuid as _uuid
+            repository.update_application_fields(
+                _uuid.UUID(req.application_id),
+                cover_letter_text=result.cover_letter,
+                cover_letter_metadata={
+                    "key_points": result.key_points,
+                    "jd_keyword_coverage": result.jd_keyword_coverage,
+                    "word_count": result.word_count,
+                },
+            )
         return result.model_dump()
     except Exception as e:
         logger.error("Cover letter failed: %s", e)
@@ -191,6 +235,7 @@ class InterviewRequest(BaseModel):
     company_research: dict[str, Any] | None = None
     match_result: dict[str, Any] | None = None
     questions_per_category: int = 3
+    application_id: str | None = None
 
 
 @router.post("/interview")
@@ -216,6 +261,13 @@ async def generate_interview_questions(req: InterviewRequest):
         )
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, _gen, input_data)
+        if req.application_id:
+            import uuid as _uuid
+            from slayer.db import repository
+            repository.update_application_fields(
+                _uuid.UUID(req.application_id),
+                interview_questions=result.model_dump(),
+            )
         return result.model_dump()
     except Exception as e:
         logger.error("Interview prep failed: %s", e)

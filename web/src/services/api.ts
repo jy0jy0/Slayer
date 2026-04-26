@@ -12,6 +12,9 @@ import type {
   CoverLetterOutput,
   InterviewInput,
   InterviewQuestionsOutput,
+  JobPostingPreview,
+  ResumePreview,
+  CompanyPreview,
 } from "../types";
 
 const BASE = "/api/v1";
@@ -156,28 +159,10 @@ export async function pollGmail(
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Company Research
-// ──────────────────────────────────────────────────────────────────────────────
-
-export async function runCompanyResearch(
-  companyName: string,
-): Promise<CompanyResearchOutput> {
-  const res = await fetch(`${BASE}/pipelines/company-research`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ company_name: companyName }),
-  });
-  if (!res.ok) {
-    throw new Error(await parseErrorResponse(res, "리서치 실패"));
-  }
-  return res.json();
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
 // JD Parse
 // ──────────────────────────────────────────────────────────────────────────────
 
-export async function parseJD(url: string): Promise<JDSchema> {
+export async function parseJD(url: string): Promise<JDSchema & { job_posting_id?: string | null }> {
   const res = await fetch(`${BASE}/pipelines/jd/parse`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -189,9 +174,35 @@ export async function parseJD(url: string): Promise<JDSchema> {
   return res.json();
 }
 
+export async function fetchJobPostings(limit = 50): Promise<JobPostingPreview[]> {
+  const res = await fetch(`${BASE}/job-postings?limit=${limit}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function fetchJobPosting(id: string): Promise<JDSchema> {
+  const res = await fetch(`${BASE}/job-postings/${id}`);
+  if (!res.ok) throw new Error(await parseErrorResponse(res, "JD 조회 실패"));
+  const data = await res.json();
+  return data.parsed_data as JDSchema;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Resume Upload / Parse
 // ──────────────────────────────────────────────────────────────────────────────
+
+export async function fetchResumesList(userId: string, limit = 50): Promise<ResumePreview[]> {
+  const res = await fetch(`${BASE}/resumes/list?user_id=${userId}&limit=${limit}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function fetchResumeDetail(id: string): Promise<ParsedResume> {
+  const res = await fetch(`${BASE}/resumes/${id}`);
+  if (!res.ok) throw new Error(await parseErrorResponse(res, "이력서 조회 실패"));
+  const data = await res.json();
+  return data.parsed as ParsedResume;
+}
 
 export async function uploadResume(
   file: File,
@@ -219,14 +230,47 @@ export async function uploadResume(
 // JD-Resume Match
 // ──────────────────────────────────────────────────────────────────────────────
 
+export async function runCompanyResearch(
+  companyName: string,
+): Promise<CompanyResearchOutput & { company_id?: string | null }> {
+  const res = await fetch(`${BASE}/pipelines/company-research`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ company_name: companyName }),
+  });
+  if (!res.ok) {
+    throw new Error(await parseErrorResponse(res, "리서치 실패"));
+  }
+  return res.json();
+}
+
+export async function fetchCompanies(limit = 100): Promise<CompanyPreview[]> {
+  const res = await fetch(`${BASE}/companies?limit=${limit}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function fetchCompany(id: string): Promise<CompanyResearchOutput> {
+  const res = await fetch(`${BASE}/companies/${id}`);
+  if (!res.ok) throw new Error(await parseErrorResponse(res, "기업 조회 실패"));
+  return res.json();
+}
+
 export async function runMatch(
   jd: JDSchema,
   resume: ParsedResume,
-): Promise<MatchResult> {
+  options?: { userId?: string; jobPostingId?: string; resumeId?: string },
+): Promise<MatchResult & { application_id?: string | null }> {
   const res = await fetch(`${BASE}/pipelines/match`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jd, resume }),
+    body: JSON.stringify({
+      jd,
+      resume,
+      user_id: options?.userId ?? null,
+      job_posting_id: options?.jobPostingId ?? null,
+      resume_id: options?.resumeId ?? null,
+    }),
   });
   if (!res.ok) {
     throw new Error(await parseErrorResponse(res, "매칭 실패"));
@@ -240,11 +284,12 @@ export async function runMatch(
 
 export async function runOptimize(
   input: OptimizeInput,
+  applicationId?: string | null,
 ): Promise<ResumeOptimizationOutput> {
   const res = await fetch(`${BASE}/pipelines/optimize`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, application_id: applicationId ?? null }),
   });
   if (!res.ok) {
     throw new Error(await parseErrorResponse(res, "최적화 실패"));
@@ -258,11 +303,12 @@ export async function runOptimize(
 
 export async function generateCoverLetter(
   input: CoverLetterInput,
+  applicationId?: string | null,
 ): Promise<CoverLetterOutput> {
   const res = await fetch(`${BASE}/pipelines/cover-letter`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, application_id: applicationId ?? null }),
   });
   if (!res.ok) {
     throw new Error(await parseErrorResponse(res, "자소서 생성 실패"));
@@ -276,11 +322,12 @@ export async function generateCoverLetter(
 
 export async function generateInterviewQuestions(
   input: InterviewInput,
+  applicationId?: string | null,
 ): Promise<InterviewQuestionsOutput> {
   const res = await fetch(`${BASE}/pipelines/interview`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, application_id: applicationId ?? null }),
   });
   if (!res.ok) {
     throw new Error(await parseErrorResponse(res, "면접 질문 생성 실패"));

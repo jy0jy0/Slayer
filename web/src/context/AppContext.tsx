@@ -15,6 +15,15 @@ interface AppState {
   setCompanyResearch: (v: CompanyResearchOutput | null) => void
   optimizeResult: ResumeOptimizationOutput | null
   setOptimizeResult: (v: ResumeOptimizationOutput | null) => void
+  // DB 연동 ID
+  applicationId: string | null
+  setApplicationId: (v: string | null) => void
+  jobPostingId: string | null
+  setJobPostingId: (v: string | null) => void
+  resumeId: string | null
+  setResumeId: (v: string | null) => void
+  companyId: string | null
+  setCompanyId: (v: string | null) => void
 }
 
 const AppContext = createContext<AppState | null>(null)
@@ -25,6 +34,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null)
   const [companyResearch, setCompanyResearch] = useState<CompanyResearchOutput | null>(null)
   const [optimizeResult, setOptimizeResult] = useState<ResumeOptimizationOutput | null>(null)
+  const [applicationId, setApplicationId] = useState<string | null>(null)
+  const [jobPostingId, setJobPostingId] = useState<string | null>(null)
+  const [resumeId, setResumeId] = useState<string | null>(null)
+  const [companyId, setCompanyId] = useState<string | null>(null)
 
   return (
     <AppContext.Provider value={{
@@ -33,6 +46,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       matchResult, setMatchResult,
       companyResearch, setCompanyResearch,
       optimizeResult, setOptimizeResult,
+      applicationId, setApplicationId,
+      jobPostingId, setJobPostingId,
+      resumeId, setResumeId,
+      companyId, setCompanyId,
     }}>
       {children}
     </AppContext.Provider>

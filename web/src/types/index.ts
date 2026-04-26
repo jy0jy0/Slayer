@@ -217,3 +217,30 @@ export interface InterviewQuestionsOutput {
   weak_areas?: string[]
   excluded_categories?: string[]
 }
+
+// ─── DB 목록 조회용 프리뷰 타입 ──────────────────────────────────────────────
+
+export interface JobPostingPreview {
+  id: string
+  title: string
+  position: string
+  company: string | null
+  deadline: string | null
+  source_url: string | null
+  created_at: string | null
+}
+
+export interface ResumePreview {
+  id: string
+  file_name: string
+  parse_status: string
+  created_at: string | null
+}
+
+export interface CompanyPreview {
+  id: string
+  name: string
+  industry: string | null
+  employee_count: string | null
+  researched_at: string | null
+}

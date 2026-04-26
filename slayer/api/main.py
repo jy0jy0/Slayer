@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from slayer.api.routes import applications, auth, gmail, health, resumes, pipelines
+from slayer.api.routes import applications, auth, gmail, health, resumes, pipelines, job_postings, companies
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,8 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(gmail.router, prefix="/api/v1")
     app.include_router(pipelines.router, prefix="/api/v1")
+    app.include_router(job_postings.router, prefix="/api/v1")
+    app.include_router(companies.router, prefix="/api/v1")
     # OAuth 콜백 단축 경로 — Supabase redirect URL 설정 편의용
     app.include_router(auth.router, prefix="")
     return app

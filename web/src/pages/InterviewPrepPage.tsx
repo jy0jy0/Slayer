@@ -84,7 +84,7 @@ interface Props {
 }
 
 export default function InterviewPrepPage({ onNavigate }: Props) {
-  const { jd, resume, matchResult, companyResearch } = useAppContext();
+  const { jd, resume, matchResult, companyResearch, applicationId } = useAppContext();
   const [qPerCategory, setQPerCategory] = useState(3);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -103,7 +103,7 @@ export default function InterviewPrepPage({ onNavigate }: Props) {
         company_research: companyResearch ?? null,
         match_result: matchResult ?? null,
         questions_per_category: qPerCategory,
-      });
+      }, applicationId);
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "면접 질문 생성 실패");

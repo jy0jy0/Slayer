@@ -10,7 +10,7 @@ interface Props {
 }
 
 export default function CoverLetterPage({ onNavigate }: Props) {
-  const { jd, resume, matchResult, companyResearch } = useAppContext();
+  const { jd, resume, matchResult, companyResearch, applicationId } = useAppContext();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<CoverLetterOutput | null>(null);
@@ -28,7 +28,7 @@ export default function CoverLetterPage({ onNavigate }: Props) {
         jd: jd!,
         company_research: companyResearch ?? null,
         match_result: matchResult ?? null,
-      });
+      }, applicationId);
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "자소서 생성 실패");
