@@ -138,8 +138,13 @@ async def get_resume(resume_id: str):
     from slayer.db.models import Resume
     from slayer.db.session import get_session
 
+    try:
+        resume_uuid = uuid.UUID(resume_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="유효하지 않은 resume_id 형식입니다.")
+
     with get_session() as session:
-        row = session.query(Resume).filter_by(id=uuid.UUID(resume_id)).first()
+        row = session.query(Resume).filter_by(id=resume_uuid).first()
 
     if not row:
         raise HTTPException(status_code=404, detail="이력서를 찾을 수 없습니다.")

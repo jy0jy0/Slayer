@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from slayer.db.session import get_session, is_db_available
@@ -185,7 +185,7 @@ def save_application(req, company_id: uuid.UUID | None, application_id: uuid.UUI
         from slayer.db.models import Application, StatusHistory
 
         app_id = application_id or uuid.uuid4()
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         _placeholder = uuid.UUID('00000000-0000-0000-0000-000000000000')
 
         with get_session() as session:

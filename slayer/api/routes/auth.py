@@ -197,7 +197,8 @@ async def save_google_token(req: GoogleTokenRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"토큰 저장 실패: {e}")
+        logger.error("토큰 저장 실패 (user_id=%s): %s", req.user_id, e)
+        raise HTTPException(status_code=500, detail="토큰 저장 중 오류가 발생했습니다.")
 
     return {
         "success": True,

@@ -8,10 +8,13 @@ Endpoints:
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+
+logger = logging.getLogger(__name__)
 
 from slayer.db.session import is_db_available
 from slayer.pipelines.apply_pipeline.pipeline import ApplyError, apply
@@ -48,8 +51,13 @@ async def list_applications(
     from slayer.db.models import Application, Company
     from slayer.db.session import get_session
 
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="유효하지 않은 user_id 형식입니다.")
+
     with get_session() as session:
-        q = session.query(Application).filter_by(user_id=uuid.UUID(user_id))
+        q = session.query(Application).filter_by(user_id=user_uuid)
 
         if status:
             q = q.filter(Application.status == status)
@@ -136,4 +144,5 @@ async def update_status(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("지원 상태 변경 실패 (application_id=%s): %s", application_id, e)
+        raise HTTPException(status_code=500, detail="지원 상태 변경 중 오류가 발생했습니다.")
