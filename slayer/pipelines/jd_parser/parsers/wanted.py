@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 
 from slayer.pipelines.jd_parser.llm_client import extract_jd, verify_extraction
-from slayer.pipelines.jd_parser.parser_base import BaseParser, CrawlConfig, JDLLMError
+from slayer.pipelines.jd_parser.parser_base import BaseParser, CrawlConfig, JDLLMError, ParseResult
 from slayer.schemas import JDSchema
 
 logger = logging.getLogger(__name__)
@@ -57,13 +57,13 @@ class WantedParser(BaseParser):
             wait_until="domcontentloaded",
         )
 
-    def parse(self, raw_html: str, crawl_markdown: str, url: str, **kwargs) -> JDSchema:
+    def parse(self, raw_html: str, crawl_markdown: str, url: str, **kwargs) -> ParseResult:
         job_title = kwargs.get("job_title")
         md_text = crawl_markdown.raw_markdown if hasattr(crawl_markdown, "raw_markdown") else str(crawl_markdown)
 
         if not md_text or len(md_text.strip()) < 100:
             logger.warning("Markdown이 너무 짧습니다: %d자", len(md_text))
-            return JDSchema(company="", title="", position="", notes=md_text, url=url, platform="wanted")
+            return ParseResult(jd=JDSchema(company="", title="", position="", notes=md_text, url=url, platform="wanted"))
 
         try:
             logger.info("LLM으로 JD 추출 중...")
@@ -82,4 +82,4 @@ class WantedParser(BaseParser):
 
         jd.url = url
         jd.platform = "wanted"
-        return jd
+        return ParseResult(jd=jd, suspicious_items=suspicious)

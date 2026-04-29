@@ -60,24 +60,30 @@ Return JSON:
 @tool
 def assess_experience_fit(
     jd_requirements_json: str,
+    jd_responsibilities_json: str,
     resume_experiences_json: str,
 ) -> str:
-    """Assess how well the candidate's experience aligns with JD requirements.
+    """Assess how well the candidate's experience aligns with JD requirements and responsibilities.
 
     Args:
         jd_requirements_json: JSON of JD requirements (required/preferred)
+        jd_responsibilities_json: JSON list of JD responsibilities (actual work content)
         resume_experiences_json: JSON list of resume experience items
 
     Returns:
         JSON with experience_score (0-100), strengths, weaknesses, and fit_summary.
     """
     provider = get_default_provider()
-    prompt = f"""Assess experience alignment between JD requirements and resume.
+    prompt = f"""Assess experience alignment between JD and resume.
+
+Use both requirements (qualifications) AND responsibilities (actual work) to evaluate fit.
+Responsibilities reveal the real depth and domain of work expected.
 
 Return JSON:
 {{"experience_score": 0-100, "strengths": ["3-5 strengths"], "weaknesses": ["3-5 weaknesses"], "fit_summary": "2-3 sentence summary"}}
 
 ## JD Requirements: {jd_requirements_json}
+## JD Responsibilities: {jd_responsibilities_json}
 ## Resume Experiences: {resume_experiences_json}"""
     return provider.generate_json(prompt, system_message="Experience fit assessor. JSON only.")
 
@@ -206,6 +212,7 @@ async def match_jd_resume(
     resume_json = resume.model_dump_json(indent=2)
     skills_json = json.dumps(jd.skills, ensure_ascii=False)
     requirements_json = jd.requirements.model_dump_json(indent=2)
+    responsibilities_json = json.dumps(jd.responsibilities, ensure_ascii=False, indent=2)
     experiences_json = json.dumps(
         [e.model_dump() for e in resume.experiences], ensure_ascii=False, indent=2
     )
@@ -217,6 +224,7 @@ JD: {jd_json}
 Resume: {resume_json}
 JD Skills (extracted): {skills_json}
 JD Requirements: {requirements_json}
+JD Responsibilities: {responsibilities_json}
 Resume Skills: {resume_skills_json}
 Resume Experiences: {experiences_json}"""
 

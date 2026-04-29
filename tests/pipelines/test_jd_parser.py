@@ -20,14 +20,23 @@ load_dotenv()
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("사용법: uv run python tests/pipelines/test_jd_parser.py <URL> [--save-raw]")
+        print("사용법: uv run python tests/pipelines/test_jd_parser.py <URL> [--save-raw] [--job-title <직무명>]")
         sys.exit(1)
 
     url = sys.argv[1]
     save_raw = "--save-raw" in sys.argv
+
+    job_title = None
+    if "--job-title" in sys.argv:
+        idx = sys.argv.index("--job-title")
+        if idx + 1 < len(sys.argv):
+            job_title = sys.argv[idx + 1]
+
     print(f"\n[1] URL: {url}")
     if save_raw:
         print("     [--save-raw 활성화]")
+    if job_title:
+        print(f"     [--job-title: {job_title}]")
 
     # ── 파서 선택 확인 ──────────────────────────────────────
     from slayer.pipelines.jd_parser.registry import get_parser
@@ -41,7 +50,7 @@ def main() -> None:
     from slayer.schemas import JDSchema
 
     try:
-        result: JDSchema = scrape_jd(url, save_raw=save_raw)
+        result: JDSchema = scrape_jd(url, save_raw=save_raw, job_title=job_title)
     except JDCrawlError as e:
         print(f"\n[오류] 크롤링 실패 — 페이지를 가져오지 못했습니다.")
         print(f"  원인: {e}")

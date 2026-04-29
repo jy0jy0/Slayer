@@ -50,6 +50,14 @@ class CrawlConfig:
     page_timeout: int = 60000
 
 
+@dataclass
+class ParseResult:
+    """파서 반환값 컨테이너."""
+    jd: JDSchema
+    suspicious_items: list[str] = field(default_factory=list)
+    image_urls: list[str] = field(default_factory=list)
+
+
 class BaseParser(ABC):
     """플랫폼별 JD 파서 추상 베이스 클래스."""
 
@@ -63,8 +71,8 @@ class BaseParser(ABC):
         return CrawlConfig()
 
     @abstractmethod
-    def parse(self, raw_html: str, crawl_markdown: str, url: str, **kwargs) -> JDSchema:
-        """크롤된 페이지에서 JD를 추출하여 JDSchema로 반환.
+    def parse(self, raw_html: str, crawl_markdown: str, url: str, **kwargs) -> ParseResult:
+        """크롤된 페이지에서 JD를 추출하여 (JDSchema, suspicious_items) 튜플로 반환.
 
         Args:
             raw_html: 렌더링된 전체 HTML.
@@ -72,7 +80,8 @@ class BaseParser(ABC):
             url: 스크래핑한 원본 URL.
 
         Returns:
-            정형화된 JDSchema 객체.
+            (JDSchema, suspicious_items) — suspicious_items는 hallucination 의심 텍스트 목록.
+            이미지 기반 추출이면 suspicious_items는 빈 리스트.
         """
         ...
 

@@ -99,14 +99,17 @@ async def _scrape(url: str, save_raw: bool = False, job_title: str | None = None
             md_text = crawl_md.raw_markdown if hasattr(crawl_md, "raw_markdown") else str(crawl_md)
             _save_raw_markdown(url, md_text)
 
-        jd = parser.parse(raw_html, crawl_md, url, save_raw=save_raw, job_title=job_title)
-        _save_parsed_jd(url, jd)
+        result = parser.parse(raw_html, crawl_md, url, save_raw=save_raw, job_title=job_title)
+        _save_parsed_jd(url, result.jd)
 
-        return jd
+        return result.jd
 
 
 def scrape_jd(url: str, save_raw: bool = False, job_title: str | None = None) -> JDSchema:
     """JD URL을 스크래핑하여 JDSchema를 반환 (동기 진입점)."""
+    import sys
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     return asyncio.run(_scrape(url, save_raw=save_raw, job_title=job_title))
 
 

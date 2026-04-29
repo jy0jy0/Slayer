@@ -90,11 +90,27 @@ class JDOverview(BaseModel):
     employment_type: Optional[str] = None
     experience: Optional[str] = None
     education: Optional[str] = None
+
+    @field_validator("experience", mode="before")
+    @classmethod
+    def default_experience(cls, v: Optional[str]) -> str:
+        """경력 요건 미기재 시 '경력 무관' 기본값 적용."""
+        return v if v and v.strip() else "경력 무관"
     salary: Optional[str] = None
     location: Optional[str] = None
     deadline: Optional[str] = None
     headcount: Optional[str] = None
     work_hours: Optional[str] = None
+
+    @field_validator("deadline", mode="before")
+    @classmethod
+    def clean_deadline(cls, v: Optional[str]) -> Optional[str]:
+        """날짜 문자열에서 순수 날짜만 추출. 예: '~ 2026.04.08(수)' → '2026.04.08'"""
+        if not v:
+            return v
+        import re
+        m = re.search(r"\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}", v)
+        return m.group(0) if m else v
 
 
 class JDRequirements(BaseModel):
@@ -138,7 +154,14 @@ class JDSchema(BaseModel):
         ),
     )
     benefits: list[str] = Field(default_factory=list)
-    process: list[str] = Field(default_factory=list)
+    process: list[str] = Field(
+        default_factory=list,
+        description=(
+            "채용 전형 단계명만 — '서류전형', '1차 면접', '임원 면접', '최종합격' 처럼 "
+            "단계를 나타내는 짧은 명사/구문만 포함. "
+            "법적 고지문, 서류 반환 안내, 합격자 통보 방식 등 부가 설명은 절대 포함하지 말 것."
+        ),
+    )
     notes: Optional[str] = None
     url: Optional[str] = None
     platform: Optional[str] = None

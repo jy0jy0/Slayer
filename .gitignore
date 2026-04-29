@@ -50,3 +50,6 @@ flagged/
 
 # ─── Additional venvs ───
 .venv_*/
+
+# local debug / scratch files
+tmp/
