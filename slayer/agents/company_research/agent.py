@@ -27,7 +27,11 @@ from slayer.ui.events import EventType
 logger = logging.getLogger(__name__)
 
 # Applied at every ainvoke/astream_events call to cap ReAct loop length.
-RUNTIME_CONFIG = {"recursion_limit": 15}
+# 30 covers: 4 tools × (LLM-call + tool-call) plus a few validate retries.
+# 15 was empirically too tight for ambiguous company names where the
+# ReAct loop revalidates / retries (observed GraphRecursionError on
+# wanted.co.kr/wd/337496 → "원티드" company name).
+RUNTIME_CONFIG = {"recursion_limit": 30}
 
 SYSTEM_PROMPT = """\
 You are a company research agent for Korean job seekers.

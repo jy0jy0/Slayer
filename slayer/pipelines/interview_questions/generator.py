@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 
+from slayer.llm import parse_agent_json
 from slayer.pipelines.interview_questions.llm_client import GeminiProvider, LLMProvider
 from slayer.schemas import (
     InterviewCategory,
@@ -230,10 +231,16 @@ def generate_interview_questions(
     raw = provider.generate_json(_build_prompt(inp, categories))
     logger.info("응답 수신 완료, 파싱 중...")
 
+    # Strip ```json fences when the provider includes them.
+    cleaned = parse_agent_json(raw)
+
+    # `strict=False` allows raw control characters (\n, \t inside string
+    # literals) that Gemini sometimes emits unescaped in long Korean
+    # answers. Without this, valid-looking responses raise JSONDecodeError.
     try:
-        data = json.loads(raw)
+        data = json.loads(cleaned, strict=False)
     except json.JSONDecodeError:
-        logger.error("LLM 응답 JSON 파싱 실패. raw response: %s", raw)
+        logger.error("LLM 응답 JSON 파싱 실패. raw response (first 800 chars): %s", raw[:800])
         raise
 
     questions = [InterviewQuestion(**q) for q in data.get("questions", [])]
