@@ -406,6 +406,35 @@ Refine(재생성)할 때 pin된 질문은 LLM이 새로 만들지 않고 그대�
 
 ---
 
+### 🗑 Reset 버튼
+
+**초기화 대상 (세션 상태):**
+
+| 항목 | 설명 |
+|------|------|
+| `interview_result` | 현재 생성된 질문 결과 |
+| `interview_history` | 이전 이터레이션 이력 전체 |
+| `interview_pinned` | 모든 질문의 pin 상태 |
+| `interview_notes` | 질문별 개선 방향 메모 |
+
+**유지되는 데이터:**
+
+| 항목 | 이유 |
+|------|------|
+| JD 데이터 | JD Parser에서 로드한 원본 |
+| 이력서 데이터 | Resume에서 파싱한 원본 |
+| 기업 리서치 | Company Research에서 수집한 원본 |
+| 매칭 결과 | JD-Resume Match 결과 |
+| Questions per category 슬라이더 | 사용자 설정값 |
+
+**사용 케이스:**
+
+- 생성된 질문이 마음에 들지 않아 완전히 처음부터 다시 시작하고 싶을 때
+- Refine을 반복하다가 방향을 잃어 초기 상태로 돌아가고 싶을 때
+- Reset 후 바로 Generate를 누르면 동일 입력(JD/이력서/설정) 기반으로 새 질문 생성
+
+---
+
 ## 주의 사항
 
 - **pin 버튼 클릭 시 `st.rerun()` 필요**: form 밖에 있어서 rerun으로 아이콘 갱신
