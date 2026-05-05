@@ -88,9 +88,15 @@ def _resolve_categories(
         excluded += [c for c in categories if c in _REQUIRES_MATCH_RESULT]
 
     if excluded:
+        missing = []
+        if inp.company_research is None:
+            missing.append("company_research 미로드 → 컬처핏/기업이해도 생성 불가")
+        if inp.match_result is None:
+            missing.append("match_result 미로드 → 상황/행동 생성 불가")
         logger.warning(
-            "데이터 부족으로 카테고리 제외: %s",
+            "데이터 부족으로 카테고리 제외: %s | 원인: %s",
             ", ".join(c.value for c in excluded),
+            " / ".join(missing),
         )
 
     return [c for c in categories if c not in excluded], excluded
