@@ -207,7 +207,14 @@ def _build_prompt(
 
 
 def _build_feedback_section(feedback: RefinementFeedback) -> str:
-    """피드백 섹션 문자열 생성 — _build_prompt 끝에 삽입된다."""
+    """피드백 섹션 문자열 생성 — _build_prompt 끝에 삽입된다.
+
+    구성:
+    1. 전반적 방향 피드백 (free_text)
+    2. 개별 질문 개선 요청 (question_notes, unpinned만)
+    3. 확정 질문 목록 (pinned, 중복 생성 금지)
+    """
+    pinned_texts = {q.question for q in feedback.pinned_questions}
     pinned_lines = "\n".join(
         f"- [{q.category.value if hasattr(q.category, 'value') else q.category}] {q.question}"
         for q in feedback.pinned_questions
@@ -217,15 +224,30 @@ def _build_feedback_section(feedback: RefinementFeedback) -> str:
         if feedback.focus_categories
         else "없음 (전체 균등 생성)"
     )
+
+    # unpinned 질문에 대한 개별 메모만 포함
+    note_lines = "\n".join(
+        f"- \"{q_text}\" → {note}"
+        for q_text, note in feedback.question_notes.items()
+        if note.strip() and q_text not in pinned_texts
+    )
+
+    individual_section = (
+        f"\n개별 질문 개선 요청 (아래 질문을 재생성할 때 반드시 반영하세요):\n{note_lines}"
+        if note_lines
+        else ""
+    )
+
     return f"""
 
 ## 재생성 피드백 (이전 버전 개선 요청)
 사용자가 이전 결과에 대해 다음 피드백을 제공했습니다. 반드시 반영하세요.
 
-피드백: {feedback.free_text or "(없음)"}
+### 전반적 방향
+{feedback.free_text or "(없음)"}
 집중 카테고리: {focus_str}
-
-이미 확정된 질문 (중복 생성 금지 — 아래 질문과 동일하거나 유사한 질문은 생성하지 마세요):
+{individual_section}
+### 확정 질문 (중복 생성 금지 — 아래 질문과 동일하거나 유사한 질문은 생성하지 마세요)
 {pinned_lines or "없음"}
 """
 
@@ -367,16 +389,22 @@ def refine_interview_questions(
     inp: InterviewQuestionsInput,
     feedback: RefinementFeedback,
     prev_questions: list[InterviewQuestion] | None = None,
+    question_notes: dict[str, str] | None = None,
     provider: LLMProvider | None = None,
 ) -> InterviewQuestionsOutput:
     """피드백 기반 면접 질문 재생성.
 
     - feedback.pinned_questions: 보존할 질문 (LLM 재생성에서 제외 지시 후 결과에 병합)
-    - feedback.free_text: 자유 피드백 → 프롬프트에 직접 삽입
+    - feedback.free_text: 전반적 방향 피드백 → 프롬프트에 직접 삽입
     - feedback.focus_categories: 집중 카테고리 → 해당 카테고리 위주로 생성
+    - question_notes: 질문별 개선 메모 — unpinned 질문에만 반영, feedback에 병합
     """
     if provider is None:
         provider = GeminiProvider()
+
+    # question_notes를 feedback에 병합 (외부에서 직접 feedback.question_notes를 채워도 됨)
+    if question_notes:
+        feedback = feedback.model_copy(update={"question_notes": question_notes})
 
     inp_for_refinement = (
         inp.model_copy(update={"categories": feedback.focus_categories})

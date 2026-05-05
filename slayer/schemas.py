@@ -591,12 +591,14 @@ class InterviewQuestionsOutput(BaseModel):
 class RefinementFeedback(BaseModel):
     """피드백 기반 재생성 입력.
 
-    free_text: 사용자 자유 입력 피드백
+    free_text: 전반적인 방향 피드백 (전체 재생성에 공통 적용)
+    question_notes: 질문별 개선 메모 {질문텍스트: 메모} — unpinned 질문만 반영
     focus_categories: 집중 강화 카테고리 (빈 리스트 = 전체 균등 생성)
     pinned_questions: UI에서 고정된 질문 — 재생성에서 제외하고 결과에 그대로 포함
     """
 
     free_text: str = ""
+    question_notes: dict[str, str] = Field(default_factory=dict)
     focus_categories: list[InterviewCategory] = Field(default_factory=list)
     pinned_questions: list[InterviewQuestion] = Field(default_factory=list)
 

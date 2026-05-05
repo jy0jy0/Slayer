@@ -138,6 +138,15 @@ def _run_refinement(current_result, feedback_text: str, focus_cat_values: list[s
                 q for q in current_result.questions
                 if st.session_state["interview_pinned"].get(q.question, False)
             ]
+            pinned_texts = {q.question for q in pinned_qs}
+
+            # unpinned 질문에 대한 메모만 추출
+            all_notes: dict[str, str] = st.session_state.get("interview_notes", {})
+            question_notes = {
+                q_text: note
+                for q_text, note in all_notes.items()
+                if note.strip() and q_text not in pinned_texts
+            }
 
             inp = InterviewQuestionsInput(
                 jd=jd,
@@ -150,11 +159,13 @@ def _run_refinement(current_result, feedback_text: str, focus_cat_values: list[s
             focus_categories = [InterviewCategory(v) for v in focus_cat_values]
             feedback = RefinementFeedback(
                 free_text=feedback_text,
+                question_notes=question_notes,
                 focus_categories=focus_categories,
                 pinned_questions=pinned_qs,
             )
 
-            status.write(f"⏳ Refining with {len(pinned_qs)} pinned questions...")
+            note_count = len(question_notes)
+            status.write(f"⏳ Refining with {len(pinned_qs)} pinned, {note_count} per-question note(s)...")
             new_result = refine_interview_questions(inp, feedback, prev_questions=prev_questions)
 
             st.session_state["interview_history"].append(current_result)
@@ -347,7 +358,7 @@ def render():
                     "개선 방향",
                     value=existing_note,
                     key=f"note_{q_key}",
-                    placeholder="e.g. 더 구체적인 기술 질문으로, STAR 구조 강조 등",
+                    placeholder="e.g. 더 어렵게 / STAR 구조로 유도 / 실제로 이 질문 받았으니 비슷한 걸로 바꿔줘",
                     label_visibility="collapsed",
                 )
                 if note != existing_note:
@@ -366,8 +377,15 @@ def render():
     with st.form("feedback_form"):
         feedback_text = st.text_area(
             "Feedback",
-            placeholder="e.g. 기술 질문을 더 심화해줘. Kubernetes 관련 질문 추가. 인성 질문은 덜 일반적으로.",
-            height=100,
+            placeholder=(
+                "전반적인 방향을 자유롭게 적어주세요.\n\n"
+                "예시:\n"
+                "• 기술 질문을 더 심화해줘. Kubernetes, 분산 시스템 관련 추가.\n"
+                "• 실제 면접에서 '5년 후 목표가 뭐냐'는 질문 받았어. 비슷한 인성 질문으로 바꿔줘.\n"
+                "• 전반적으로 너무 교과서적이야. 실무 경험을 파고드는 질문으로 바꿔줘.\n"
+                "• 경험 질문을 줄이고 기술 질문 비중을 늘려줘."
+            ),
+            height=130,
             label_visibility="collapsed",
         )
         focus_cats = st.multiselect(
