@@ -127,7 +127,7 @@ def _run_generation(jd, resume, cr, mr, questions_per_category: int) -> None:
     st.rerun()
 
 
-def _run_refinement(current_result, feedback_text: str, focus_cat_values: list[str], jd, resume, cr, mr, questions_per_category: int) -> None:
+def _run_refinement(current_result, feedback_text: str, focus_cat_values: list[str], jd, resume, cr, mr, questions_per_category: int, prev_questions=None) -> None:
     """피드백 기반 재생성."""
     with st.status("Refining questions...", expanded=True) as status:
         try:
@@ -155,7 +155,7 @@ def _run_refinement(current_result, feedback_text: str, focus_cat_values: list[s
             )
 
             status.write(f"⏳ Refining with {len(pinned_qs)} pinned questions...")
-            new_result = refine_interview_questions(inp, feedback)
+            new_result = refine_interview_questions(inp, feedback, prev_questions=prev_questions)
 
             st.session_state["interview_history"].append(current_result)
             st.session_state["interview_result"] = new_result
@@ -390,7 +390,7 @@ def render():
         if not feedback_text.strip() and not pinned_qs and not focus_cats:
             st.warning("Please provide feedback, pin questions, or select focus categories.")
         else:
-            _run_refinement(result, feedback_text, focus_cats, jd, resume, cr, mr, questions_per_category)
+            _run_refinement(result, feedback_text, focus_cats, jd, resume, cr, mr, questions_per_category, prev_questions=result.questions)
 
     # ── Sample Answers ────────────────────────────────────────────────
     if result.sample_answers:

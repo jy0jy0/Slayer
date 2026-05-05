@@ -234,35 +234,79 @@ def _merge_questions(
     pinned: list[InterviewQuestion],
     new_questions: list[InterviewQuestion],
     questions_per_category: int,
+    prev_questions: list[InterviewQuestion] | None = None,
 ) -> list[InterviewQuestion]:
     """고정 질문 + 새 질문을 카테고리별로 병합한다.
 
-    - pinned 질문은 항상 유지 (questions_per_category 초과해도 보존)
-    - 남은 슬롯을 new_questions로 채움
+    prev_questions가 주어지면 원래 슬롯 위치를 보존한다.
+    - pinned 질문 → 원래 인덱스 자리 유지
+    - unpinned 슬롯 → new_questions로 순서대로 채움
+    - 남은 new_questions → questions_per_category 미만이면 뒤에 추가
+
+    prev_questions가 없으면 기존 방식 (pinned 먼저, new 뒤에).
     """
     from collections import defaultdict
 
+    def _cat(q: InterviewQuestion) -> str:
+        return q.category.value if hasattr(q.category, "value") else str(q.category)
+
+    pinned_texts = {q.question for q in pinned}
+
+    if prev_questions is not None:
+        # 위치 보존 병합
+        prev_by_cat: dict[str, list[InterviewQuestion]] = defaultdict(list)
+        for q in prev_questions:
+            prev_by_cat[_cat(q)].append(q)
+
+        new_by_cat: dict[str, list[InterviewQuestion]] = defaultdict(list)
+        for q in new_questions:
+            new_by_cat[_cat(q)].append(q)
+
+        result: list[InterviewQuestion] = []
+        all_cats = list(prev_by_cat.keys()) + [c for c in new_by_cat if c not in prev_by_cat]
+
+        for cat in all_cats:
+            prev_qs = prev_by_cat[cat]
+            new_iter = iter(new_by_cat[cat])
+            cat_result: list[InterviewQuestion] = []
+
+            # 이전 슬롯 순서대로: pinned면 유지, unpinned면 새 질문으로 교체
+            for q in prev_qs:
+                if q.question in pinned_texts:
+                    cat_result.append(q)
+                else:
+                    replacement = next(new_iter, None)
+                    if replacement:
+                        cat_result.append(replacement)
+
+            # 남은 new_questions를 questions_per_category까지 뒤에 추가
+            for extra in new_iter:
+                if len(cat_result) < questions_per_category:
+                    cat_result.append(extra)
+
+            result.extend(cat_result)
+
+        return result
+
+    # prev_questions 없을 때: pinned 먼저, new 뒤에 (하위 호환)
     pinned_by_cat: dict[str, list[InterviewQuestion]] = defaultdict(list)
     for q in pinned:
-        cat = q.category.value if hasattr(q.category, "value") else str(q.category)
-        pinned_by_cat[cat].append(q)
+        pinned_by_cat[_cat(q)].append(q)
 
-    new_by_cat: dict[str, list[InterviewQuestion]] = defaultdict(list)
+    new_by_cat2: dict[str, list[InterviewQuestion]] = defaultdict(list)
     for q in new_questions:
-        cat = q.category.value if hasattr(q.category, "value") else str(q.category)
-        new_by_cat[cat].append(q)
+        new_by_cat2[_cat(q)].append(q)
 
-    result: list[InterviewQuestion] = []
-    all_cats = list(pinned_by_cat.keys()) + [c for c in new_by_cat if c not in pinned_by_cat]
+    result2: list[InterviewQuestion] = []
+    all_cats2 = list(pinned_by_cat.keys()) + [c for c in new_by_cat2 if c not in pinned_by_cat]
 
-    for cat in all_cats:
+    for cat in all_cats2:
         p_qs = pinned_by_cat[cat]
-        n_qs = new_by_cat[cat]
+        n_qs = new_by_cat2[cat]
         slots = max(questions_per_category, len(p_qs))
-        combined = p_qs + n_qs[: max(0, slots - len(p_qs))]
-        result.extend(combined)
+        result2.extend(p_qs + n_qs[: max(0, slots - len(p_qs))])
 
-    return result
+    return result2
 
 
 def generate_interview_questions(
@@ -322,6 +366,7 @@ def generate_interview_questions(
 def refine_interview_questions(
     inp: InterviewQuestionsInput,
     feedback: RefinementFeedback,
+    prev_questions: list[InterviewQuestion] | None = None,
     provider: LLMProvider | None = None,
 ) -> InterviewQuestionsOutput:
     """피드백 기반 면접 질문 재생성.
@@ -362,7 +407,7 @@ def refine_interview_questions(
     sample_answers = [SampleAnswer(**a) for a in data.get("sample_answers", [])]
     weak_areas: list[str] = data.get("weak_areas", [])
 
-    merged = _merge_questions(feedback.pinned_questions, new_questions, inp.questions_per_category)
+    merged = _merge_questions(feedback.pinned_questions, new_questions, inp.questions_per_category, prev_questions=prev_questions)
 
     logger.info(
         "재생성 완료 — 병합 질문 %d개 (pinned %d + new %d) / 예시 답변 %d개",
