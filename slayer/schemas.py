@@ -588,6 +588,19 @@ class InterviewQuestionsOutput(BaseModel):
     excluded_categories: list[str]  # 데이터 부족으로 제외된 카테고리 (비어있으면 전체 생성됨)
 
 
+class RefinementFeedback(BaseModel):
+    """피드백 기반 재생성 입력.
+
+    free_text: 사용자 자유 입력 피드백
+    focus_categories: 집중 강화 카테고리 (빈 리스트 = 전체 균등 생성)
+    pinned_questions: UI에서 고정된 질문 — 재생성에서 제외하고 결과에 그대로 포함
+    """
+
+    free_text: str = ""
+    focus_categories: list[InterviewCategory] = Field(default_factory=list)
+    pinned_questions: list[InterviewQuestion] = Field(default_factory=list)
+
+
 # ═══════════════════════════════════════════════════
 # 전형 단계 (회사별 유동적 채용 프로세스)
 # ═══════════════════════════════════════════════════

@@ -28,7 +28,7 @@ from openai import (
     RateLimitError,
 )
 
-from slayer.config import OPENAI_API_KEY
+from slayer.config import GOOGLE_API_KEY, OPENAI_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -193,9 +193,32 @@ class OpenAIProvider:
         return content
 
 
-def get_default_provider() -> OpenAIProvider:
-    """Return the default LLM provider instance."""
-    return OpenAIProvider()
+class GeminiProvider:
+    """Google Gemini 기반 LLM Provider (generate_json 인터페이스 구현)."""
+
+    def __init__(self, model: str = "gemini-2.5-flash", api_key: str | None = None) -> None:
+        from google import genai
+        self._model = model
+        self._client = genai.Client(api_key=api_key or GOOGLE_API_KEY)
+
+    def generate_json(self, prompt: str, system_message: str | None = None) -> str:
+        from google.genai import types
+        contents = prompt if not system_message else f"{system_message}\n\n{prompt}"
+        response = self._client.models.generate_content(
+            model=self._model,
+            contents=contents,
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
+        return response.text or "{}"
+
+
+def get_default_provider() -> OpenAIProvider | GeminiProvider:
+    """Return the default LLM provider — OpenAI if key set, else Gemini."""
+    if OPENAI_API_KEY:
+        return OpenAIProvider()
+    if GOOGLE_API_KEY:
+        return GeminiProvider()
+    raise ValueError("Neither OPENAI_API_KEY nor GOOGLE_API_KEY is set")
 
 
 def get_chat_model(model: str = "gpt-4o-mini"):

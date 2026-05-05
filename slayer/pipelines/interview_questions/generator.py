@@ -24,6 +24,7 @@ from slayer.schemas import (
     InterviewQuestion,
     InterviewQuestionsInput,
     InterviewQuestionsOutput,
+    RefinementFeedback,
     SampleAnswer,
 )
 
@@ -95,7 +96,11 @@ def _resolve_categories(
     return [c for c in categories if c not in excluded], excluded
 
 
-def _build_prompt(inp: InterviewQuestionsInput, categories: list[InterviewCategory]) -> str:
+def _build_prompt(
+    inp: InterviewQuestionsInput,
+    categories: list[InterviewCategory],
+    feedback: RefinementFeedback | None = None,
+) -> str:
     n = inp.questions_per_category
     jd = inp.jd
     resume = inp.resume
@@ -198,7 +203,66 @@ def _build_prompt(inp: InterviewQuestionsInput, categories: list[InterviewCatego
 }}
 
 생성할 카테고리: {', '.join(cat.value for cat in categories)}
+{_build_feedback_section(feedback) if feedback else ""}"""
+
+
+def _build_feedback_section(feedback: RefinementFeedback) -> str:
+    """피드백 섹션 문자열 생성 — _build_prompt 끝에 삽입된다."""
+    pinned_lines = "\n".join(
+        f"- [{q.category.value if hasattr(q.category, 'value') else q.category}] {q.question}"
+        for q in feedback.pinned_questions
+    )
+    focus_str = (
+        ", ".join(c.value for c in feedback.focus_categories)
+        if feedback.focus_categories
+        else "없음 (전체 균등 생성)"
+    )
+    return f"""
+
+## 재생성 피드백 (이전 버전 개선 요청)
+사용자가 이전 결과에 대해 다음 피드백을 제공했습니다. 반드시 반영하세요.
+
+피드백: {feedback.free_text or "(없음)"}
+집중 카테고리: {focus_str}
+
+이미 확정된 질문 (중복 생성 금지 — 아래 질문과 동일하거나 유사한 질문은 생성하지 마세요):
+{pinned_lines or "없음"}
 """
+
+
+def _merge_questions(
+    pinned: list[InterviewQuestion],
+    new_questions: list[InterviewQuestion],
+    questions_per_category: int,
+) -> list[InterviewQuestion]:
+    """고정 질문 + 새 질문을 카테고리별로 병합한다.
+
+    - pinned 질문은 항상 유지 (questions_per_category 초과해도 보존)
+    - 남은 슬롯을 new_questions로 채움
+    """
+    from collections import defaultdict
+
+    pinned_by_cat: dict[str, list[InterviewQuestion]] = defaultdict(list)
+    for q in pinned:
+        cat = q.category.value if hasattr(q.category, "value") else str(q.category)
+        pinned_by_cat[cat].append(q)
+
+    new_by_cat: dict[str, list[InterviewQuestion]] = defaultdict(list)
+    for q in new_questions:
+        cat = q.category.value if hasattr(q.category, "value") else str(q.category)
+        new_by_cat[cat].append(q)
+
+    result: list[InterviewQuestion] = []
+    all_cats = list(pinned_by_cat.keys()) + [c for c in new_by_cat if c not in pinned_by_cat]
+
+    for cat in all_cats:
+        p_qs = pinned_by_cat[cat]
+        n_qs = new_by_cat[cat]
+        slots = max(questions_per_category, len(p_qs))
+        combined = p_qs + n_qs[: max(0, slots - len(p_qs))]
+        result.extend(combined)
+
+    return result
 
 
 def generate_interview_questions(
@@ -249,6 +313,67 @@ def generate_interview_questions(
 
     return InterviewQuestionsOutput(
         questions=questions,
+        sample_answers=sample_answers,
+        weak_areas=weak_areas,
+        excluded_categories=[c.value for c in excluded],
+    )
+
+
+def refine_interview_questions(
+    inp: InterviewQuestionsInput,
+    feedback: RefinementFeedback,
+    provider: LLMProvider | None = None,
+) -> InterviewQuestionsOutput:
+    """피드백 기반 면접 질문 재생성.
+
+    - feedback.pinned_questions: 보존할 질문 (LLM 재생성에서 제외 지시 후 결과에 병합)
+    - feedback.free_text: 자유 피드백 → 프롬프트에 직접 삽입
+    - feedback.focus_categories: 집중 카테고리 → 해당 카테고리 위주로 생성
+    """
+    if provider is None:
+        provider = GeminiProvider()
+
+    inp_for_refinement = (
+        inp.model_copy(update={"categories": feedback.focus_categories})
+        if feedback.focus_categories
+        else inp
+    )
+
+    categories, excluded = _resolve_categories(inp_for_refinement)
+    logger.info(
+        "면접 질문 재생성 시작 — %s / %s | 카테고리: %s | pinned: %d개",
+        inp.jd.company,
+        inp.jd.position,
+        ", ".join(c.value for c in categories),
+        len(feedback.pinned_questions),
+    )
+
+    prompt = _build_prompt(inp_for_refinement, categories, feedback=feedback)
+    raw = provider.generate_json(prompt)
+    logger.info("재생성 응답 수신 완료, 파싱 중...")
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.error("재생성 LLM 응답 JSON 파싱 실패. raw response: %s", raw)
+        raise
+
+    new_questions = [InterviewQuestion(**q) for q in data.get("questions", [])]
+    sample_answers = [SampleAnswer(**a) for a in data.get("sample_answers", [])]
+    weak_areas: list[str] = data.get("weak_areas", [])
+
+    merged = _merge_questions(feedback.pinned_questions, new_questions, inp.questions_per_category)
+
+    logger.info(
+        "재생성 완료 — 병합 질문 %d개 (pinned %d + new %d) / 예시 답변 %d개",
+        len(merged),
+        len(feedback.pinned_questions),
+        len(new_questions),
+        len(sample_answers),
+    )
+
+    return InterviewQuestionsOutput(
+        questions=merged,
         sample_answers=sample_answers,
         weak_areas=weak_areas,
         excluded_categories=[c.value for c in excluded],

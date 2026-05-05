@@ -247,6 +247,56 @@ def update_job_posting(url: str, fields: dict) -> Any:
 
 
 @_safe_db_op
+def save_interview_questions(jd, result) -> Any:
+    """면접 질문 결과를 Application.interview_questions JSONB 컬럼에 저장.
+
+    - JD company name으로 기존 Application 조회
+    - 있으면 interview_questions 업데이트, 없으면 최소 필드로 신규 생성
+    """
+    from slayer.db.models import Application, Company
+
+    with get_session() as session:
+        company_id = None
+        if jd.company:
+            company = session.query(Company).filter_by(name=jd.company).first()
+            if company:
+                company_id = company.id
+
+        app = None
+        if company_id:
+            app = (
+                session.query(Application)
+                .filter_by(company_id=company_id)
+                .order_by(Application.created_at.desc())
+                .first()
+            )
+
+        if app:
+            app.interview_questions = result.model_dump()
+            logger.info(
+                "Updated interview_questions: company=%s, questions=%d",
+                jd.company,
+                len(result.questions),
+            )
+        else:
+            app = Application(
+                id=uuid.uuid4(),
+                user_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+                company_id=company_id or uuid.UUID("00000000-0000-0000-0000-000000000000"),
+                status="reviewing",
+                interview_questions=result.model_dump(),
+            )
+            session.add(app)
+            logger.info(
+                "Created Application with interview_questions: company=%s, questions=%d",
+                jd.company,
+                len(result.questions),
+            )
+
+        return app
+
+
+@_safe_db_op
 def save_job_posting(jd_schema) -> Any:
     """Save parsed JD as a JobPosting row. Looks up company_id by name if available."""
     from slayer.db.models import Company, JobPosting
