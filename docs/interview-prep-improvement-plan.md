@@ -344,6 +344,68 @@ for idx, old_result in enumerate(reversed(history), 1):
 
 ---
 
+## 사용 가이드
+
+### 기본 흐름
+
+1. JD Parser → JD-Resume Match 순으로 데이터 로드
+2. Interview Prep 페이지에서 **Questions per category** 슬라이더 설정 후 **🎯 Generate** 클릭
+3. 카테고리별 질문 확인 → 마음에 드는 질문은 📌 pin, 개선이 필요한 질문엔 메모 입력
+4. Refine 폼에 전반적인 피드백 작성 → **🔄 Refine Questions** 클릭
+5. 반복하다가 만족스러운 결과가 나오면 **⬇ DOCX** 버튼으로 다운로드
+
+---
+
+### 📌 Pin 기능
+
+#### 개념
+
+각 질문 옆에 있는 📌 버튼으로 "이 질문은 유지해줘"라고 표시하는 기능.
+Refine(재생성)할 때 pin된 질문은 LLM이 새로 만들지 않고 그대로 결과에 포함된다.
+
+#### 사용 방법
+
+| 상태 | 버튼 | 의미 |
+|------|------|------|
+| 미선택 | 📌 | 클릭하면 pin됨 |
+| 선택됨 | ✅ | 클릭하면 pin 해제 |
+
+질문 텍스트 옆에도 📌 아이콘이 표시되어 한눈에 확인 가능.
+
+#### Refine 시 동작 방식
+
+```
+[기술 Q1] Python GIL 설명  ✅ pin
+[기술 Q2] 비동기 처리 경험  (미선택)
+[기술 Q3] FastAPI 설계 방법 (미선택)
+
+↓ Refine 실행 ("기술 질문 더 심화해줘")
+
+[기술 Q1] Python GIL 설명  ← pin된 질문 그대로 유지
+[기술 Q2] GIL과 멀티프로세싱 비교  ← 새로 생성
+[기술 Q3] asyncio 내부 동작 원리    ← 새로 생성
+```
+
+#### 내부 구현
+
+1. **프롬프트 레벨**: pin된 질문 목록을 `"중복 생성 금지"` 지시로 LLM 프롬프트에 삽입  
+   → LLM이 같거나 유사한 질문을 새로 생성하지 않음
+
+2. **병합 레벨**: `_merge_questions(pinned, new_questions, questions_per_category)` 함수에서  
+   pin된 질문을 카테고리 슬롯의 앞자리에 배치 후 나머지를 새 질문으로 채움  
+   → pin된 질문이 `questions_per_category`를 초과해도 항상 보존
+
+3. **세션 상태**: `st.session_state["interview_pinned"]` — `{질문텍스트: bool}` 형태  
+   → 이터레이션 간 순서가 바뀌어도 텍스트 기반이라 안전하게 유지
+
+#### 활용 팁
+
+- 카테고리 전체를 Refine하고 싶을 때: 해당 카테고리 질문을 모두 pin 해제 → Focus categories에서 해당 카테고리만 선택
+- 마음에 드는 질문 몇 개를 남기고 전체 방향을 바꾸고 싶을 때: 좋은 질문만 pin → 자유 피드백으로 방향 지시
+- Reset 버튼을 누르면 pin 상태 포함 모든 세션 초기화
+
+---
+
 ## 주의 사항
 
 - **pin 버튼 클릭 시 `st.rerun()` 필요**: form 밖에 있어서 rerun으로 아이콘 갱신
