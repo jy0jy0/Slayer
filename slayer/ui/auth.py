@@ -380,7 +380,12 @@ def render_login_page() -> None:
             st.caption("Gmail 자동 연동을 위해 Google 로그인을 권장합니다.")
 
         with tab_email:
-            mode = st.radio("", ["로그인", "회원가입", "비밀번호 재설정"], horizontal=True, label_visibility="collapsed")
+            mode = st.radio(
+                "인증 방식",
+                ["로그인", "회원가입", "비밀번호 재설정"],
+                horizontal=True,
+                label_visibility="collapsed",
+            )
             email_input = st.text_input("이메일", key="email_input")
 
             if mode == "로그인":
