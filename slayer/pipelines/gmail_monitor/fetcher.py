@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import base64
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Iterator
 
 from slayer.pipelines.gmail_monitor.classifier import GmailParseError, classify_email
@@ -497,10 +497,16 @@ def _handle_pass_or_interview(user_id: str, result: GmailParseResult, event_data
 
             # 이미 최종 단계이면 전이 불필요
             if app.status in ("in_progress", "final_pass"):
+                event_data["application_id"] = str(app.id)
+                _link_event_to_application(event_data, app.id)
+                if result.status_type == GmailStatusType.INTERVIEW and result.interview_details:
+                    _create_interview_event(user_id, result, event_data)
                 return
 
             prev_status = app.status
             app.status = "in_progress"
+            event_data["application_id"] = str(app.id)
+            _link_event_to_application(event_data, app.id)
 
             if created:
                 # 신규 생성: applied → in_progress 두 이력 기록
@@ -552,6 +558,8 @@ def _handle_rejection(user_id: str, result: GmailParseResult, event_data: dict) 
             app, created = _get_or_create_application(
                 session, user_id, company, initial_status="applied"
             )
+            event_data["application_id"] = str(app.id)
+            _link_event_to_application(event_data, app.id)
 
             if app.status in ("rejected", "withdrawn", "final_pass"):
                 return
@@ -585,6 +593,25 @@ def _handle_rejection(user_id: str, result: GmailParseResult, event_data: dict) 
         logger.warning("거절 상태 전이 실패: %s", e)
 
 
+def _link_event_to_application(event_data: dict, application_id) -> None:
+    """저장된 gmail_events row에 연결된 application_id를 기록."""
+    import uuid
+    from slayer.db.models import GmailEvent
+    from slayer.db.session import get_session, is_db_available
+
+    event_id = event_data.get("event_id")
+    if not event_id or not is_db_available():
+        return
+
+    try:
+        with get_session() as session:
+            event = session.query(GmailEvent).filter_by(id=uuid.UUID(event_id)).first()
+            if event:
+                event.application_id = application_id
+    except Exception as e:
+        logger.warning("gmail_event application 연결 실패: %s", e)
+
+
 def _create_interview_event(user_id: str, result: GmailParseResult, event_data: dict) -> None:
     """면접 일정 Calendar 이벤트 생성."""
     import uuid
@@ -599,21 +626,51 @@ def _create_interview_event(user_id: str, result: GmailParseResult, event_data: 
     except ValueError:
         return
 
+    if start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=timezone.utc)
+
+    duration = det.duration_minutes or 60
+    end_dt = start_dt + timedelta(minutes=duration)
     title = f"[면접] {result.company}" + (f" — {result.stage_name}" if result.stage_name else "")
+    description = "\n".join(
+        part for part in [
+            "Gmail 채용 메일에서 자동 생성된 일정입니다.",
+            f"다음 단계: {result.next_step}" if result.next_step else "",
+            f"요약: {result.raw_summary}" if result.raw_summary else "",
+            f"플랫폼: {det.platform}" if det.platform else "",
+        ]
+        if part
+    )
 
     # Calendar API 연동 시도 (apply_pipeline과 동일 패턴)
     try:
         from slayer.pipelines.apply_pipeline.pipeline import _try_google_calendar
-        google_event_id = _try_google_calendar(user_id, title, start_dt)
+        google_event_id = _try_google_calendar(
+            user_id,
+            title,
+            start_dt,
+            end_dt=end_dt,
+            description=description,
+            location=det.location,
+        )
     except Exception:
         google_event_id = None
 
+    application_id = event_data.get("application_id")
+    if not application_id:
+        logger.warning("면접 Calendar 저장 건너뜀: application_id 없음")
+        return
+
     repository.save_calendar_event(
         user_id=user_id,
-        application_id=uuid.UUID(event_data["event_id"]) if "event_id" in event_data else uuid.uuid4(),
+        application_id=uuid.UUID(application_id),
         event_type="interview",
         title=title,
         start_datetime=start_dt,
+        end_datetime=end_dt,
+        description=description,
+        location=det.location,
+        gmail_event_id=uuid.UUID(event_data["event_id"]) if "event_id" in event_data else None,
         google_event_id=google_event_id,
         sync_status="synced" if google_event_id else "pending",
     )

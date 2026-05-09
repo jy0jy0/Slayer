@@ -436,6 +436,9 @@ def save_calendar_event(
     title: str,
     start_datetime: datetime,
     end_datetime: datetime | None = None,
+    description: str | None = None,
+    location: str | None = None,
+    gmail_event_id: uuid.UUID | None = None,
     google_event_id: str | None = None,
     sync_status: str = "pending",
 ) -> Any:
@@ -447,11 +450,14 @@ def save_calendar_event(
             id=uuid.uuid4(),
             user_id=uuid.UUID(user_id),
             application_id=application_id,
+            gmail_event_id=gmail_event_id,
             google_event_id=google_event_id,
             event_type=event_type,
             title=title,
+            description=description,
             start_datetime=start_datetime,
             end_datetime=end_datetime,
+            location=location,
             sync_status=sync_status,
         )
         session.add(event)

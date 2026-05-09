@@ -102,7 +102,18 @@ def _create_deadline_event(req: ApplyRequest, application_id: str) -> CalendarEv
         23, 59, 0, tzinfo=timezone.utc,
     )
 
-    google_event_id = _try_google_calendar(req.user_id, title, start_dt)
+    description = (
+        f"지원 마감일\n"
+        f"회사: {req.company_name}\n"
+        f"포지션: {req.position}\n"
+        f"ATS: {req.ats_score if req.ats_score is not None else '-'}"
+    )
+    google_event_id = _try_google_calendar(
+        req.user_id,
+        title,
+        start_dt,
+        description=description,
+    )
     sync_status = "synced" if google_event_id else "pending"
 
     repository.save_calendar_event(
@@ -111,6 +122,7 @@ def _create_deadline_event(req: ApplyRequest, application_id: str) -> CalendarEv
         event_type="deadline",
         title=title,
         start_datetime=start_dt,
+        description=description,
         google_event_id=google_event_id,
         sync_status=sync_status,
     )
@@ -124,7 +136,14 @@ def _create_deadline_event(req: ApplyRequest, application_id: str) -> CalendarEv
     )
 
 
-def _try_google_calendar(user_id: str, title: str, start_dt: datetime) -> str | None:
+def _try_google_calendar(
+    user_id: str,
+    title: str,
+    start_dt: datetime,
+    end_dt: datetime | None = None,
+    description: str | None = None,
+    location: str | None = None,
+) -> str | None:
     """Google Calendar API로 이벤트 생성 시도.
 
     OAuth 토큰을 DB에서 조회하여 사용. 실패 시 None 반환 (에러 없음).
@@ -133,6 +152,7 @@ def _try_google_calendar(user_id: str, title: str, start_dt: datetime) -> str | 
         import uuid as _uuid
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
+        from slayer.config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
         from slayer.db.models import User
         from slayer.db.session import get_session, is_db_available
 
@@ -147,14 +167,21 @@ def _try_google_calendar(user_id: str, title: str, start_dt: datetime) -> str | 
                 token=user.google_access_token,
                 refresh_token=user.google_refresh_token,
                 token_uri="https://oauth2.googleapis.com/token",
+                client_id=GOOGLE_CLIENT_ID or None,
+                client_secret=GOOGLE_CLIENT_SECRET or None,
             )
 
         service = build("calendar", "v3", credentials=creds)
+        end_dt = end_dt or start_dt
         event_body = {
             "summary": title,
             "start": {"dateTime": start_dt.isoformat(), "timeZone": "Asia/Seoul"},
-            "end": {"dateTime": start_dt.isoformat(), "timeZone": "Asia/Seoul"},
+            "end": {"dateTime": end_dt.isoformat(), "timeZone": "Asia/Seoul"},
         }
+        if description:
+            event_body["description"] = description
+        if location:
+            event_body["location"] = location
         result = service.events().insert(calendarId="primary", body=event_body).execute()
         return result.get("id")
 
