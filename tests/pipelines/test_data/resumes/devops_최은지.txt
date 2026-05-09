@@ -1,0 +1,127 @@
+최은지
+DevOps / Cloud Infrastructure Engineer
+경력 4년
+
+연락처
+- 이메일: eunji.sample@example.com
+- 전화: 010-0000-0004
+- GitHub: https://github.com/example/eunji-devops
+- LinkedIn: https://linkedin.com/in/example-eunji
+
+---
+
+자기소개
+
+안정적인 서비스 운영과 개발 생산성 향상을 동시에 추구하는 DevOps 엔지니어입니다.
+AWS 기반 인프라 설계부터 CI/CD 파이프라인 구축, 쿠버네티스 운영까지 서비스 라이프사이클 전반에 걸친 경험을 가지고 있습니다.
+비용 최적화에 관심이 많아 연간 약 4억 원 규모의 인프라 비용을 절감한 경험이 있습니다.
+
+---
+
+경력
+
+[1] 라인플러스 / DevOps Engineer / 2024.01 ~ 현재
+
+Platform Engineering팀 소속. 사내 개발자 700명+이 사용하는 CI/CD 플랫폼 및 쿠버네티스 클러스터를 운영하고 있습니다.
+
+주요 업무:
+- EKS 클러스터 3개 운영 (프로덕션, 스테이징, 개발)
+- Argo CD + Argo Workflows 기반 GitOps 배포 체계 관리
+- 사내 개발자 포털(Internal Developer Platform) 구축 참여
+
+
+[2] 우아한형제들 / Infrastructure Engineer / 2022.01 ~ 2023.12
+
+배달의민족 인프라팀. 주문/결제 서비스의 AWS 인프라 설계 및 운영을 담당했습니다.
+
+주요 업무:
+- AWS 기반 인프라 설계 (EC2, RDS, ElastiCache, SQS, S3, CloudFront)
+- Terraform으로 IaC 전환 (수동 콘솔 작업 → 코드 기반 관리)
+- 장애 대응 및 사후 분석(Post-mortem) 문화 정착
+
+---
+
+프로젝트
+
+[프로젝트 1] 쿠버네티스 마이그레이션
+기간: 2024.03 ~ 2024.09
+소속: 라인플러스
+역할: 마이그레이션 리드
+
+EC2 기반 레거시 서비스 42개를 EKS로 마이그레이션. 무중단 전환을 위한 단계적 마이그레이션 전략을 수립하고 실행했습니다.
+
+기술: Kubernetes, Helm, Argo CD, Istio, AWS EKS, Terraform
+성과:
+- 42개 서비스 무중단 마이그레이션 완료 (6개월)
+- 서비스 배포 시간 평균 25분 → 4분으로 단축 (84% 개선)
+- 리소스 활용률 35% → 72%로 개선 (Pod autoscaling)
+- 마이그레이션 가이드 문서 작성, 사내 공유 세션 3회 진행
+
+
+[프로젝트 2] CI/CD 파이프라인 통합 구축
+기간: 2024.01 ~ 2024.03
+소속: 라인플러스
+역할: 설계 및 구축
+
+팀마다 제각각이던 CI/CD 파이프라인을 통합. GitHub Actions + Argo CD 기반의 표준 파이프라인 템플릿을 만들어 전사 배포했습니다.
+
+기술: GitHub Actions, Argo CD, Docker, Trivy, SonarQube
+성과:
+- 표준 파이프라인 템플릿 도입 (사내 45개 팀 적용)
+- 빌드~배포 평균 시간 18분 → 7분
+- 보안 스캔(Trivy + SonarQube) 자동화로 취약점 사전 차단율 92%
+
+
+[프로젝트 3] 모니터링 시스템 구축
+기간: 2022.06 ~ 2022.12
+소속: 우아한형제들
+역할: 설계 및 구축
+
+CloudWatch 중심이던 모니터링을 Prometheus + Grafana 기반으로 전환. 서비스별 SLI/SLO를 정의하고 알림 체계를 구축했습니다.
+
+기술: Prometheus, Grafana, Alertmanager, Loki, AWS CloudWatch
+성과:
+- 서비스 30개에 대한 SLI/SLO 대시보드 구축
+- MTTD(평균 감지 시간) 15분 → 2분으로 단축
+- 알림 노이즈 80% 감소 (알림 규칙 최적화)
+
+
+[프로젝트 4] AWS 비용 최적화
+기간: 2023.01 ~ 2023.06
+소속: 우아한형제들
+역할: 분석 및 실행
+
+AWS 월 비용 분석 → 최적화 방안 도출 → 실행 → 효과 측정까지 전 과정을 주도했습니다.
+
+기술: AWS Cost Explorer, Savings Plans, Spot Instances, Terraform, Python
+성과:
+- 연간 인프라 비용 약 4억 원 절감 (월 12억 → 월 8.7억)
+- Reserved Instance → Savings Plans 전환으로 컴퓨팅 비용 32% 절감
+- 개발/스테이징 환경 야간 자동 중지 스크립트 구현
+- 미사용 리소스(EBS, EIP, 구 AMI) 정리 자동화
+
+---
+
+기술
+
+Cloud: AWS (EC2, EKS, RDS, S3, CloudFront, SQS, Lambda, IAM)
+Container: Docker, Kubernetes, Helm, Istio
+IaC: Terraform, Ansible, Pulumi
+CI/CD: GitHub Actions, Argo CD, Argo Workflows, Jenkins
+Monitoring: Prometheus, Grafana, Loki, Datadog, PagerDuty
+Languages: Python, Bash, Go (기초)
+OS: Linux (Ubuntu, Amazon Linux)
+
+---
+
+자격증
+
+1. AWS Solutions Architect Professional (2023.09)
+2. AWS DevOps Engineer Professional (2023.04)
+3. Certified Kubernetes Administrator (CKA) (2024.02)
+
+---
+
+학력
+
+성균관대학교 소프트웨어학과 학사 (2016.03 ~ 2022.02)

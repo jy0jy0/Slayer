@@ -24,6 +24,7 @@ from slayer.pipelines.resume_parser.extractors import extract_text
 DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "resumes"
 SAMPLE_PDF = DATA_DIR / "backend_김준혁.pdf"
 
+RUN_LIVE_LLM_TESTS = os.environ.get("RUN_LIVE_LLM_TESTS") == "1"
 HAS_API_KEY = bool(os.environ.get("GOOGLE_API_KEY"))
 
 
@@ -98,7 +99,10 @@ class TestExtractors:
 # ── E2E 테스트 (API 키 필요) ──────────────────────────────
 
 
-@pytest.mark.skipif(not HAS_API_KEY, reason="GOOGLE_API_KEY not set")
+@pytest.mark.skipif(
+    not (RUN_LIVE_LLM_TESTS and HAS_API_KEY),
+    reason="live Gemini test disabled; set RUN_LIVE_LLM_TESTS=1 and GOOGLE_API_KEY",
+)
 class TestE2E:
     @pytest.mark.skipif(not SAMPLE_PDF.exists(), reason="Sample PDF not found")
     def test_parse_resume_pdf(self):

@@ -53,6 +53,13 @@ def render():
                     jd_json_str = json.dumps(jd_schema.model_dump(), ensure_ascii=False, indent=2)
                     st.session_state["jd_data"] = jd_json_str
                     st.session_state["jd_source"] = "url"
+                    try:
+                        from slayer.db.repository import save_job_posting
+                        job_posting_id = save_job_posting(jd_schema, source_url=jd_url)
+                        if job_posting_id:
+                            st.session_state["job_posting_id"] = str(job_posting_id)
+                    except Exception:
+                        pass
                     status.write(f"✅ Parsed: **{jd_schema.company}** — {jd_schema.title}")
                     status.update(label="✅ JD parsed from URL", state="complete")
                     st.rerun()
@@ -81,6 +88,21 @@ def render():
                     resume_json_str = json.dumps(resume_schema.model_dump(), ensure_ascii=False, indent=2)
                     st.session_state["resume_data"] = resume_json_str
                     st.session_state["resume_source"] = "upload"
+                    try:
+                        user_id = st.session_state.get("user_id")
+                        if user_id:
+                            from slayer.db.repository import save_parsed_resume
+                            resume_id = save_parsed_resume(
+                                user_id=user_id,
+                                file_name=uploaded_file.name,
+                                file_type=suffix.lstrip("."),
+                                file_url=uploaded_file.name,
+                                parsed_resume=resume_schema,
+                            )
+                            if resume_id:
+                                st.session_state["resume_id"] = str(resume_id)
+                    except Exception:
+                        pass
                     name = resume_schema.personal_info.name if resume_schema.personal_info else "?"
                     status.write(f"✅ Parsed resume for **{name}**")
                     status.update(label="✅ Resume parsed", state="complete")
@@ -165,7 +187,15 @@ def render():
                 # DB save (non-blocking)
                 try:
                     from slayer.db.repository import save_match_result
-                    save_match_result(jd_data, resume_data, result)
+                    app_id = save_match_result(
+                        result,
+                        user_id=st.session_state.get("user_id"),
+                        job_posting_id=st.session_state.get("job_posting_id"),
+                        resume_id=st.session_state.get("resume_id"),
+                        company_name=jd.company,
+                    )
+                    if app_id:
+                        st.session_state["application_id"] = str(app_id)
                 except Exception:
                     pass
             except Exception as e:

@@ -229,6 +229,8 @@ Resume Skills: {resume_skills_json}
 Resume Experiences: {experiences_json}"""
 
     input_msg = {"messages": [{"role": "user", "content": user_msg}]}
+
+    # UI 콜백이 있으면 스트리밍 이벤트를 전달하고, 마지막 chat model 응답을 결과로 사용한다.
     content = ""
 
     async for event in agent.astream_events(input_msg, version="v2", config=RUNTIME_CONFIG):
@@ -269,7 +271,8 @@ Resume Experiences: {experiences_json}"""
         elif kind == "on_chat_model_end":
             output = event.get("data", {}).get("output", None)
             if output and hasattr(output, "content") and output.content:
-                content = output.content
+                from slayer.llm import _extract_text_from_content
+                content = _extract_text_from_content(output.content)
 
     if not content:
         try:
@@ -278,7 +281,8 @@ Resume Experiences: {experiences_json}"""
             if not messages:
                 raise ValueError("Agent produced no output")
             final_message = messages[-1]
-            content = final_message.content if hasattr(final_message, "content") else str(final_message)
+            from slayer.llm import _extract_text_from_content
+            content = _extract_text_from_content(final_message.content) if hasattr(final_message, "content") else str(final_message)
         except Exception as e:
             logger.error("Fallback invocation failed: %s", e)
             content = ""

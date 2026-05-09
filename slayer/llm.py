@@ -18,7 +18,7 @@ import os
 import random
 import time
 from functools import wraps
-from typing import Callable, Optional, Protocol, runtime_checkable
+from typing import Any, Callable, Optional, Protocol, runtime_checkable
 
 from openai import (
     APIConnectionError,
@@ -28,13 +28,14 @@ from openai import (
     RateLimitError,
 )
 
-from slayer.config import OPENAI_API_KEY
+from slayer.config import GOOGLE_API_KEY, OPENAI_API_KEY
 
 logger = logging.getLogger(__name__)
 
-# config.py declares OPENAI_MODEL but we allow environment override here
+# config.py declares provider defaults, but we allow environment override here
 # so jobs can switch models without touching source.
 LLM_MODEL = os.environ.get("SLAYER_LLM_MODEL", "gpt-4o-mini")
+GEMINI_MODEL = os.environ.get("SLAYER_GEMINI_MODEL", "gemini-2.5-flash")
 
 
 # Transient network/timeout errors that are always worth retrying.
@@ -193,32 +194,93 @@ class OpenAIProvider:
         return content
 
 
-def get_default_provider() -> OpenAIProvider:
-    """Return the default LLM provider instance."""
-    return OpenAIProvider()
+class GeminiProvider:
+    """Google Gemini API 기반 LLM Provider (OpenAI fallback)."""
+
+    def __init__(self, model: str | None = None, api_key: str | None = None):
+        from google import genai
+        from google.genai.types import GenerateContentConfig
+        key = api_key or GOOGLE_API_KEY
+        if not key:
+            raise ValueError("GOOGLE_API_KEY가 설정되지 않았습니다.")
+        self._client = genai.Client(api_key=key)
+        self._config_cls = GenerateContentConfig
+        self.model = model or GEMINI_MODEL
+
+    def generate_json(self, prompt: str, system_message: str | None = None) -> str:
+        contents = prompt
+        if system_message:
+            contents = f"{system_message}\n\n{prompt}"
+
+        logger.debug("Gemini 호출 (model=%s)", self.model)
+        response = self._client.models.generate_content(
+            model=self.model,
+            contents=contents,
+            config=self._config_cls(
+                response_mime_type="application/json",
+                temperature=0.0,
+            ),
+        )
+        content = response.text or "{}"
+        logger.debug("Gemini 응답 수신 (%d chars)", len(content))
+        return content
+
+
+def _has_openai_key() -> bool:
+    """실제 유효한 OpenAI 키가 설정되어 있는지 확인."""
+    return bool(OPENAI_API_KEY and not OPENAI_API_KEY.startswith("your-"))
+
+
+def get_default_provider() -> OpenAIProvider | GeminiProvider:
+    """기본 LLM Provider 반환. OpenAI 키 없으면 Gemini로 자동 fallback."""
+    if _has_openai_key():
+        return OpenAIProvider()
+    if GOOGLE_API_KEY:
+        logger.info("OPENAI_API_KEY 없음 — Gemini로 fallback")
+        return GeminiProvider()
+    raise ValueError("OPENAI_API_KEY 또는 GOOGLE_API_KEY 중 하나는 설정해야 합니다.")
 
 
 def get_chat_model(model: str = "gpt-4o-mini"):
-    """Return a ChatOpenAI instance for LangGraph create_react_agent.
+    """LangGraph create_react_agent 용 Chat 모델.
 
-    `max_retries=3` enables ChatOpenAI's built-in transient error retry for
-    the LangChain code path, mirroring the custom retry used by OpenAIProvider.
+    OpenAI 키 있으면 ChatOpenAI, 없으면 ChatGoogleGenerativeAI로 자동 fallback.
     """
-    from langchain_openai import ChatOpenAI
+    if _has_openai_key():
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(model=model, api_key=OPENAI_API_KEY, max_retries=3)
 
-    if not OPENAI_API_KEY:
-        raise ValueError("OPENAI_API_KEY is not set")
-    return ChatOpenAI(model=model, api_key=OPENAI_API_KEY, max_retries=3)
+    if GOOGLE_API_KEY:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        logger.info("OPENAI_API_KEY 없음 — ChatGoogleGenerativeAI(%s)로 fallback", GEMINI_MODEL)
+        return ChatGoogleGenerativeAI(model=GEMINI_MODEL, google_api_key=GOOGLE_API_KEY)
+
+    raise ValueError("OPENAI_API_KEY 또는 GOOGLE_API_KEY 중 하나는 설정해야 합니다.")
 
 
-def parse_agent_json(content: str) -> str:
-    """Extract a JSON string from an LLM agent response.
+def _extract_text_from_content(content: Any) -> str:
+    """AIMessage.content가 str 또는 list[dict] 형태일 때 텍스트를 추출.
 
-    Handles three forms: fenced ```json blocks, raw JSON starting with `{`,
-    and JSON embedded in surrounding text. Raises ValueError if no JSON
-    object can be located.
+    Gemini via LangChain은 [{'type': 'text', 'text': '...'}] 형식으로 반환.
+    OpenAI는 str 형식으로 반환.
     """
-    if not content or not isinstance(content, str):
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+        return "\n".join(parts)
+    return str(content)
+
+
+def parse_agent_json(content: Any) -> str:
+    """Extract JSON string from LLM agent response.
+
+    Handles: ```json blocks, raw JSON, JSON embedded in text.
+    content는 str 또는 Gemini 스타일 list[dict] 모두 허용.
+    Raises ValueError if no valid JSON found.
+    """
+    content = _extract_text_from_content(content)
+    if not content:
         raise ValueError("Empty or non-string content")
     content = content.strip()
     # Try fenced ```json block first.

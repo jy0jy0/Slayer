@@ -48,6 +48,7 @@ class FileFormat(str, Enum):
     DOCX = "docx"
     MD = "md"
     TXT = "txt"
+    JSON = "json"
 
 
 _EXT_MAP: dict[str, FileFormat] = {
@@ -55,6 +56,7 @@ _EXT_MAP: dict[str, FileFormat] = {
     ".docx": FileFormat.DOCX,
     ".md": FileFormat.MD,
     ".txt": FileFormat.TXT,
+    ".json": FileFormat.JSON,
 }
 
 

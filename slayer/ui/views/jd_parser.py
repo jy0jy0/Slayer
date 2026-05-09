@@ -139,7 +139,9 @@ def render():
 
                 try:
                     from slayer.db.repository import save_job_posting
-                    save_job_posting(jd_schema)
+                    job_posting_id = save_job_posting(jd_schema, source_url=jd_url)
+                    if job_posting_id:
+                        st.session_state["job_posting_id"] = str(job_posting_id)
                     status.write("✅ **[4/4] 저장 완료** — 파일 + DB")
                 except Exception as db_err:
                     status.write(f"✅ **[4/4] 파일 저장 완료** (DB 저장 실패: {db_err})")

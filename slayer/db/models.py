@@ -42,6 +42,7 @@ class User(Base):
     google_access_token = Column(Text)
     google_refresh_token = Column(Text)
     token_expires_at = Column(DateTime(timezone=True))
+    supabase_refresh_token = Column(Text)
     gmail_last_history_id = Column(String(50))
     gmail_last_poll_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -120,7 +120,13 @@ async def run_company_research_streaming(
         elif kind == "on_chat_model_end":
             output = event.get("data", {}).get("output", None)
             if output and hasattr(output, "content"):
-                content = output.content
+                from slayer.llm import _extract_text_from_content
+
+                extracted = _extract_text_from_content(output.content)
+
+                if extracted:
+
+                    content = extracted
 
     if not content:
         # Fallback: run non-streaming
@@ -129,8 +135,9 @@ async def run_company_research_streaming(
             messages = result.get("messages", [])
             if not messages:
                 raise ValueError("Agent produced no output")
+            from slayer.llm import _extract_text_from_content
             final_message = messages[-1]
-            content = final_message.content if hasattr(final_message, "content") else str(final_message)
+            content = _extract_text_from_content(final_message.content) if hasattr(final_message, "content") else str(final_message)
         except Exception as e:
             logger.error("Fallback invocation failed: %s", e)
             content = ""
@@ -168,8 +175,9 @@ async def _run_company_research_invoke(company_name: str) -> CompanyResearchOutp
         {"messages": [{"role": "user", "content": f"Research the company: {company_name}"}]},
         config=RUNTIME_CONFIG,
     )
+    from slayer.llm import _extract_text_from_content
     final_message = result["messages"][-1]
-    content = final_message.content if hasattr(final_message, "content") else str(final_message)
+    content = _extract_text_from_content(final_message.content) if hasattr(final_message, "content") else str(final_message)
     try:
         json_str = parse_agent_json(content)
         data = json.loads(json_str)
