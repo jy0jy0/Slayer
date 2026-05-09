@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import base64
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlencode
@@ -20,9 +21,14 @@ import streamlit as st
 
 logger = logging.getLogger(__name__)
 
+from slayer.config import SUPABASE_URL
+
 # Supabase 프로젝트 설정
-_SUPABASE_URL = "https://mwahcudydbkjjtlfgubr.supabase.co"
-_REDIRECT_URL = "http://localhost:8000/api/v1/auth/callback"  # FastAPI 중간 페이지 (hash → query param 변환)
+_SUPABASE_URL = SUPABASE_URL
+_REDIRECT_URL = os.environ.get(
+    "SLAYER_OAUTH_REDIRECT_URL",
+    "http://localhost:8000/api/v1/auth/callback",
+)  # FastAPI 중간 페이지 (hash → query param 변환)
 
 
 def get_oauth_url() -> str:
@@ -142,6 +148,13 @@ def handle_oauth_callback() -> bool:
         False: 콜백 없음 (일반 페이지 로드)
     """
     params = st.query_params
+    oauth_error = params.get("auth_error", "") or params.get("error", "")
+    if oauth_error:
+        error_description = params.get("auth_error_description", "") or params.get("error_description", "")
+        st.error(f"Google 로그인 실패: {error_description or oauth_error}")
+        st.query_params.clear()
+        return False
+
     access_token = params.get("access_token", "")
     if not access_token:
         return False
@@ -164,6 +177,9 @@ def handle_oauth_callback() -> bool:
     if not user_id:
         st.error("토큰에서 user_id를 읽을 수 없습니다.")
         return False
+
+    # public.users row가 없으면 만든 뒤 저장한다. Google OAuth 최초 로그인에서 필요하다.
+    user_id = _ensure_user_exists(user_id, email)
 
     # DB 저장: google_access_token + supabase_refresh_token (자동 갱신용)
     saved = _save_token_to_db(

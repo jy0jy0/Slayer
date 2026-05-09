@@ -12,6 +12,7 @@ Endpoint:
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -25,7 +26,7 @@ from slayer.db.session import is_db_available
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 
-_STREAMLIT_URL = "http://localhost:8501"
+_STREAMLIT_URL = os.environ.get("SLAYER_STREAMLIT_URL", "http://localhost:8501")
 
 _CALLBACK_HTML = """<!DOCTYPE html>
 <html>
@@ -49,12 +50,30 @@ _CALLBACK_HTML = """<!DOCTYPE html>
         window.location.replace(STREAMLIT_URL + '/?' + qs.toString());
     }}
 
+    function forwardError(error, description) {{
+        var qs = new URLSearchParams({{
+            auth_error: error || 'oauth_failed',
+            auth_error_description: description || '',
+        }});
+        window.location.replace(STREAMLIT_URL + '/?' + qs.toString());
+    }}
+
     // ── PKCE flow: ?code=... ──────────────────────────────
     var urlParams = new URLSearchParams(window.location.search);
+    var callbackError = urlParams.get('error');
+    if (callbackError) {{
+        forwardError(callbackError, urlParams.get('error_description') || '');
+        return;
+    }}
+
     var code = urlParams.get('code');
     if (code) {{
         var client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         client.auth.exchangeCodeForSession(code).then(function(result) {{
+            if (result.error) {{
+                forwardError(result.error.name || 'exchange_failed', result.error.message || '');
+                return;
+            }}
             var session = result.data && result.data.session;
             if (session) {{
                 forwardTokens(
@@ -65,8 +84,10 @@ _CALLBACK_HTML = """<!DOCTYPE html>
                     session.expires_at ? String(session.expires_at) : ''
                 );
             }} else {{
-                window.location.replace(STREAMLIT_URL);
+                forwardError('missing_session', 'Supabase did not return an OAuth session.');
             }}
+        }}).catch(function(error) {{
+            forwardError(error.name || 'exchange_failed', error.message || '');
         }});
         return;
     }}
