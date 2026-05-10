@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+import json
 from datetime import datetime, timezone
 
 import streamlit as st
@@ -136,6 +137,34 @@ def _load_interviews(user_id: str) -> list[dict]:
         return []
 
 
+def _load_workspace_to_session(application_id: str, user_id: str) -> bool:
+    """Dashboard에서 선택한 지원 건을 작업 세션으로 로드."""
+    try:
+        from slayer.db.repository import get_application_workspace
+        from slayer.schemas import MatchResult
+
+        workspace = get_application_workspace(application_id, user_id)
+        if not workspace:
+            return False
+
+        if workspace.get("jd_data"):
+            st.session_state["jd_data"] = json.dumps(workspace["jd_data"], ensure_ascii=False, indent=2)
+            st.session_state["jd_parser_result"] = st.session_state["jd_data"]
+            st.session_state["jd_source"] = "db"
+        if workspace.get("resume_data"):
+            st.session_state["resume_data"] = json.dumps(workspace["resume_data"], ensure_ascii=False, indent=2)
+            st.session_state["resume_source"] = "db"
+        if workspace.get("match_result"):
+            st.session_state["match_result"] = MatchResult(**workspace["match_result"])
+
+        for key in ("application_id", "job_posting_id", "resume_id"):
+            if workspace.get(key):
+                st.session_state[key] = workspace[key]
+        return True
+    except Exception:
+        return False
+
+
 def render():
     st.html(GLOBAL_CSS)
     user_id = st.session_state.get("user_id", "")
@@ -185,12 +214,21 @@ def render():
                 icon, label, color = _STATUS_KO.get(app["status"], ("•", app["status"], "#888"))
                 score = f'  `ATS {app["ats_score"]:.0f}`' if app["ats_score"] else ""
                 date  = app["applied_at"] or app["deadline"] or ""
-                st.markdown(
-                    f'{icon} **{app["company"]}** '
-                    f'<span style="color:{color};font-size:12px">{label}</span>'
-                    f'{score}  <span style="color:#888;font-size:12px">{date}</span>',
-                    unsafe_allow_html=True,
-                )
+                row_main, row_action = st.columns([5, 1])
+                with row_main:
+                    st.markdown(
+                        f'{icon} **{app["company"]}** '
+                        f'<span style="color:{color};font-size:12px">{label}</span>'
+                        f'{score}  <span style="color:#888;font-size:12px">{date}</span>',
+                        unsafe_allow_html=True,
+                    )
+                with row_action:
+                    if st.button("열기", key=f"open_app_{app['id']}", use_container_width=True):
+                        if _load_workspace_to_session(app["id"], user_id):
+                            st.session_state["nav_page"] = "JD-Resume Match"
+                            st.rerun()
+                        else:
+                            st.warning("지원 건을 불러오지 못했습니다.")
 
     # ── 면접 일정 ─────────────────────────────────────────
     with col_right:

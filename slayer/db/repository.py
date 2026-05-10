@@ -362,6 +362,131 @@ def save_parsed_resume(
     return resume_id
 
 
+@_safe_db_op
+def list_recent_job_postings(limit: int = 50) -> list[dict]:
+    """최근 저장된 JD 목록을 UI 선택용 dict로 반환."""
+    from slayer.db.models import Company, JobPosting
+
+    with get_session() as session:
+        rows = (
+            session.query(JobPosting, Company.name)
+            .outerjoin(Company, JobPosting.company_id == Company.id)
+            .filter(JobPosting.parsed_data.isnot(None))
+            .order_by(JobPosting.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "id": str(job.id),
+                "company": company_name or (job.parsed_data or {}).get("company") or "?",
+                "title": job.title or (job.parsed_data or {}).get("title") or "?",
+                "position": job.position or "",
+                "source_url": job.source_url or "",
+                "created_at": job.created_at.isoformat() if job.created_at else "",
+                "parsed_data": job.parsed_data or {},
+            }
+            for job, company_name in rows
+        ]
+
+
+@_safe_db_op
+def list_user_resumes(user_id: str, limit: int = 50) -> list[dict]:
+    """사용자의 저장된 이력서 목록을 UI 선택용 dict로 반환."""
+    from slayer.db.models import Resume
+
+    with get_session() as session:
+        rows = (
+            session.query(Resume)
+            .filter(Resume.user_id == uuid.UUID(user_id))
+            .filter(Resume.parsed_data.isnot(None))
+            .order_by(Resume.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "id": str(resume.id),
+                "file_name": resume.file_name,
+                "file_type": resume.file_type,
+                "created_at": resume.created_at.isoformat() if resume.created_at else "",
+                "parsed_data": resume.parsed_data or {},
+            }
+            for resume in rows
+        ]
+
+
+@_safe_db_op
+def list_user_applications(user_id: str, limit: int = 50) -> list[dict]:
+    """사용자의 지원/매칭 목록을 UI 선택용 dict로 반환."""
+    from slayer.db.models import Application, Company, JobPosting, Resume
+
+    with get_session() as session:
+        rows = (
+            session.query(Application, Company.name, JobPosting.title, Resume.file_name)
+            .join(Company, Application.company_id == Company.id)
+            .outerjoin(JobPosting, Application.job_posting_id == JobPosting.id)
+            .outerjoin(Resume, Application.resume_id == Resume.id)
+            .filter(Application.user_id == uuid.UUID(user_id))
+            .order_by(Application.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "id": str(app.id),
+                "company": company_name or "?",
+                "title": title or "?",
+                "resume_name": file_name or "",
+                "status": app.status,
+                "ats_score": app.ats_score,
+                "created_at": app.created_at.isoformat() if app.created_at else "",
+            }
+            for app, company_name, title, file_name in rows
+        ]
+
+
+@_safe_db_op
+def get_application_workspace(application_id: str, user_id: str | None = None) -> dict | None:
+    """Application 기준으로 JD/Resume/Match를 한 번에 로드한다."""
+    from slayer.db.models import Application
+
+    app_uuid = uuid.UUID(application_id)
+    with get_session() as session:
+        query = session.query(Application).filter(Application.id == app_uuid)
+        if user_id:
+            query = query.filter(Application.user_id == uuid.UUID(user_id))
+        app = query.first()
+        if not app:
+            return None
+
+        job = app.job_posting
+        resume = app.resume
+        company = app.company
+        match_result = None
+        if app.ats_score is not None:
+            match_result = {
+                "ats_score": app.ats_score,
+                "score_breakdown": app.score_breakdown or {},
+                "matched_keywords": app.matched_keywords or [],
+                "missing_keywords": app.missing_keywords or [],
+                "strengths": app.strengths or [],
+                "weaknesses": app.weaknesses or [],
+                "gap_summary": app.gap_summary or "",
+            }
+
+        return {
+            "application_id": str(app.id),
+            "job_posting_id": str(app.job_posting_id) if app.job_posting_id else "",
+            "resume_id": str(app.resume_id) if app.resume_id else "",
+            "company": company.name if company else "",
+            "status": app.status,
+            "jd_data": job.parsed_data if job and job.parsed_data else None,
+            "resume_data": resume.parsed_data if resume and resume.parsed_data else None,
+            "match_result": match_result,
+        }
+
+
 def save_application(req, company_id: uuid.UUID | None, application_id: uuid.UUID | None = None) -> tuple[uuid.UUID, datetime] | None:
     """applications 테이블에 지원 건 INSERT + status_history 기록.
 

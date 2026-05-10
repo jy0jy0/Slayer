@@ -35,15 +35,71 @@ def _parse_resume_sync(file_path: str):
     return parse_resume(file_path)
 
 
-def render():
-    st.html(GLOBAL_CSS)
-    render_page_header("JD-Resume Match", "Analyze ATS matching score between job description and resume.")
+def _apply_workspace(workspace: dict) -> None:
+    """Load DB workspace data into Streamlit session state."""
+    from slayer.schemas import MatchResult
 
-    # ── JD URL Parsing & Resume File Upload ──────────────────────────
-    col_jd, col_resume = st.columns(2)
+    if workspace.get("jd_data"):
+        st.session_state["jd_data"] = json.dumps(workspace["jd_data"], ensure_ascii=False, indent=2)
+        st.session_state["jd_parser_result"] = st.session_state["jd_data"]
+        st.session_state["jd_source"] = "db"
+    if workspace.get("resume_data"):
+        st.session_state["resume_data"] = json.dumps(workspace["resume_data"], ensure_ascii=False, indent=2)
+        st.session_state["resume_source"] = "db"
+    if workspace.get("match_result"):
+        st.session_state["match_result"] = MatchResult(**workspace["match_result"])
+    else:
+        st.session_state.pop("match_result", None)
 
-    with col_jd:
-        st.markdown("**JD — Parse from URL**")
+    for key in ("application_id", "job_posting_id", "resume_id"):
+        if workspace.get(key):
+            st.session_state[key] = workspace[key]
+
+
+def _option_date(value: str) -> str:
+    return value[:10] if value else ""
+
+
+def _render_saved_application_loader(user_id: str | None) -> None:
+    with st.expander("📁 Continue saved match", expanded=False):
+        if not user_id:
+            st.warning("Login is required to load saved applications.")
+            return
+
+        try:
+            from slayer.db.repository import get_application_workspace, list_user_applications
+            applications = list_user_applications(user_id) or []
+        except Exception as e:
+            applications = []
+            st.warning(f"Failed to load applications: {e}")
+
+        if not applications:
+            st.caption("No saved applications or match results yet.")
+            return
+
+        selected_app = st.selectbox(
+            "Saved applications",
+            applications,
+            format_func=lambda app: (
+                f"{app['company']} — {app['title']} "
+                f"| ATS {app['ats_score']:.0f}" if app.get("ats_score") is not None
+                else f"{app['company']} — {app['title']} | {app['status']}"
+            ),
+            key="saved_application_select",
+        )
+        if st.button("Load selected application", key="load_saved_application", use_container_width=True):
+            workspace = get_application_workspace(selected_app["id"], user_id)
+            if workspace:
+                _apply_workspace(workspace)
+                st.success("Loaded saved application workspace.")
+                st.rerun()
+            else:
+                st.error("Application could not be loaded.")
+
+
+def _render_jd_input() -> None:
+    jd_tabs = st.tabs(["Parse URL", "Choose from DB"])
+    with jd_tabs[0]:
         jd_url = st.text_input("JD URL", placeholder="https://...", label_visibility="collapsed", key="jd_url_input")
         if st.button("🔗 Parse from URL", key="btn_parse_jd", use_container_width=True, disabled=not jd_url):
             with st.status("Scraping JD from URL...", expanded=True) as status:
@@ -66,12 +122,39 @@ def render():
                 except Exception as e:
                     status.update(label="❌ JD parsing failed", state="error")
                     st.error(f"Failed to parse JD: {e}")
-                    # Clear stale data on failure
                     st.session_state.pop("jd_data", None)
                     st.session_state.pop("jd_source", None)
 
-    with col_resume:
-        st.markdown("**Resume — Upload File**")
+    with jd_tabs[1]:
+        try:
+            from slayer.db.repository import list_recent_job_postings
+            postings = list_recent_job_postings() or []
+        except Exception as e:
+            postings = []
+            st.warning(f"Failed to load saved JDs: {e}")
+
+        if not postings:
+            st.caption("No saved job descriptions yet.")
+            return
+
+        selected_jd = st.selectbox(
+            "Shared job descriptions",
+            postings,
+            format_func=lambda jd: f"{jd['company']} — {jd['title']} | {_option_date(jd.get('created_at', ''))}",
+            key="saved_jd_select",
+        )
+        if st.button("Load JD from DB", key="load_saved_jd", use_container_width=True):
+            st.session_state["jd_data"] = json.dumps(selected_jd["parsed_data"], ensure_ascii=False, indent=2)
+            st.session_state["jd_parser_result"] = st.session_state["jd_data"]
+            st.session_state["jd_source"] = "db"
+            st.session_state["job_posting_id"] = selected_jd["id"]
+            st.success("Loaded saved JD.")
+            st.rerun()
+
+
+def _render_resume_input(user_id: str | None) -> None:
+    resume_tabs = st.tabs(["Upload File", "Choose from DB"])
+    with resume_tabs[0]:
         uploaded_file = st.file_uploader(
             "Upload Resume", type=["pdf", "docx"], label_visibility="collapsed", key="resume_file_upload"
         )
@@ -89,7 +172,6 @@ def render():
                     st.session_state["resume_data"] = resume_json_str
                     st.session_state["resume_source"] = "upload"
                     try:
-                        user_id = st.session_state.get("user_id")
                         if user_id:
                             from slayer.db.repository import save_parsed_resume
                             resume_id = save_parsed_resume(
@@ -110,12 +192,61 @@ def render():
                 except Exception as e:
                     status.update(label="❌ Resume parsing failed", state="error")
                     st.error(f"Failed to parse resume: {e}")
-                    # Clear stale data on failure
                     st.session_state.pop("resume_data", None)
                     st.session_state.pop("resume_source", None)
                 finally:
                     if tmp_path and os.path.exists(tmp_path):
                         os.unlink(tmp_path)
+
+    with resume_tabs[1]:
+        if not user_id:
+            st.warning("Login is required to load saved resumes.")
+            return
+        try:
+            from slayer.db.repository import list_user_resumes
+            resumes = list_user_resumes(user_id) or []
+        except Exception as e:
+            resumes = []
+            st.warning(f"Failed to load saved resumes: {e}")
+
+        if not resumes:
+            st.caption("No saved resumes yet.")
+            return
+
+        selected_resume = st.selectbox(
+            "Saved resumes",
+            resumes,
+            format_func=lambda resume: f"{resume['file_name']} | {_option_date(resume.get('created_at', ''))}",
+            key="saved_resume_select",
+        )
+        if st.button("Load resume from DB", key="load_saved_resume", use_container_width=True):
+            st.session_state["resume_data"] = json.dumps(
+                selected_resume["parsed_data"], ensure_ascii=False, indent=2
+            )
+            st.session_state["resume_source"] = "db"
+            st.session_state["resume_id"] = selected_resume["id"]
+            st.success("Loaded saved resume.")
+            st.rerun()
+
+
+def render():
+    st.html(GLOBAL_CSS)
+    render_page_header("JD-Resume Match", "Analyze ATS matching score between job description and resume.")
+
+    user_id = st.session_state.get("user_id")
+
+    _render_saved_application_loader(user_id)
+
+    # ── JD URL Parsing & Resume File Upload ──────────────────────────
+    col_jd, col_resume = st.columns(2)
+
+    with col_jd:
+        st.markdown("**JD**")
+        _render_jd_input()
+
+    with col_resume:
+        st.markdown("**Resume**")
+        _render_resume_input(user_id)
 
     st.markdown("")
 

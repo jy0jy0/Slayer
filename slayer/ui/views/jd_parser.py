@@ -80,6 +80,7 @@ def render():
                 st.session_state["jd_parser_result"] = jd_json_str
                 st.session_state["jd_data"] = jd_json_str
                 st.session_state["jd_source"] = "jd_parser"
+                st.session_state["job_posting_id"] = str(cached.id)
                 st.session_state[_EDIT_GEN_KEY] = st.session_state.get(_EDIT_GEN_KEY, 0) + 1
                 st.session_state["_cache_msg"] = f"✅ DB 캐시에서 로드 — **{jd_schema.company}** / {jd_schema.title}"
                 _cache_hit = True
