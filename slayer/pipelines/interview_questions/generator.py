@@ -24,6 +24,7 @@ from slayer.schemas import (
     InterviewQuestion,
     InterviewQuestionsInput,
     InterviewQuestionsOutput,
+    RefinementFeedback,
     SampleAnswer,
 )
 
@@ -87,15 +88,25 @@ def _resolve_categories(
         excluded += [c for c in categories if c in _REQUIRES_MATCH_RESULT]
 
     if excluded:
+        missing = []
+        if inp.company_research is None:
+            missing.append("company_research 미로드 → 컬처핏/기업이해도 생성 불가")
+        if inp.match_result is None:
+            missing.append("match_result 미로드 → 상황/행동 생성 불가")
         logger.warning(
-            "데이터 부족으로 카테고리 제외: %s",
+            "데이터 부족으로 카테고리 제외: %s | 원인: %s",
             ", ".join(c.value for c in excluded),
+            " / ".join(missing),
         )
 
     return [c for c in categories if c not in excluded], excluded
 
 
-def _build_prompt(inp: InterviewQuestionsInput, categories: list[InterviewCategory]) -> str:
+def _build_prompt(
+    inp: InterviewQuestionsInput,
+    categories: list[InterviewCategory],
+    feedback: RefinementFeedback | None = None,
+) -> str:
     n = inp.questions_per_category
     jd = inp.jd
     resume = inp.resume
@@ -198,7 +209,132 @@ def _build_prompt(inp: InterviewQuestionsInput, categories: list[InterviewCatego
 }}
 
 생성할 카테고리: {', '.join(cat.value for cat in categories)}
+{_build_feedback_section(feedback) if feedback else ""}"""
+
+
+def _build_feedback_section(feedback: RefinementFeedback) -> str:
+    """피드백 섹션 문자열 생성 — _build_prompt 끝에 삽입된다.
+
+    구성:
+    1. 전반적 방향 피드백 (free_text)
+    2. 개별 질문 개선 요청 (question_notes, unpinned만)
+    3. 확정 질문 목록 (pinned, 중복 생성 금지)
+    """
+    pinned_texts = {q.question for q in feedback.pinned_questions}
+    pinned_lines = "\n".join(
+        f"- [{q.category.value if hasattr(q.category, 'value') else q.category}] {q.question}"
+        for q in feedback.pinned_questions
+    )
+    focus_str = (
+        ", ".join(c.value for c in feedback.focus_categories)
+        if feedback.focus_categories
+        else "없음 (전체 균등 생성)"
+    )
+
+    # unpinned 질문에 대한 개별 메모만 포함
+    note_lines = "\n".join(
+        f"- \"{q_text}\" → {note}"
+        for q_text, note in feedback.question_notes.items()
+        if note.strip() and q_text not in pinned_texts
+    )
+
+    individual_section = (
+        f"\n개별 질문 개선 요청 (아래 질문을 재생성할 때 반드시 반영하세요):\n{note_lines}"
+        if note_lines
+        else ""
+    )
+
+    return f"""
+
+## 재생성 피드백 (이전 버전 개선 요청)
+사용자가 이전 결과에 대해 다음 피드백을 제공했습니다. 반드시 반영하세요.
+
+### 전반적 방향
+{feedback.free_text or "(없음)"}
+집중 카테고리: {focus_str}
+{individual_section}
+### 확정 질문 (중복 생성 금지 — 아래 질문과 동일하거나 유사한 질문은 생성하지 마세요)
+{pinned_lines or "없음"}
 """
+
+
+def _merge_questions(
+    pinned: list[InterviewQuestion],
+    new_questions: list[InterviewQuestion],
+    questions_per_category: int,
+    prev_questions: list[InterviewQuestion] | None = None,
+) -> list[InterviewQuestion]:
+    """고정 질문 + 새 질문을 카테고리별로 병합한다.
+
+    prev_questions가 주어지면 원래 슬롯 위치를 보존한다.
+    - pinned 질문 → 원래 인덱스 자리 유지
+    - unpinned 슬롯 → new_questions로 순서대로 채움
+    - 남은 new_questions → questions_per_category 미만이면 뒤에 추가
+
+    prev_questions가 없으면 기존 방식 (pinned 먼저, new 뒤에).
+    """
+    from collections import defaultdict
+
+    def _cat(q: InterviewQuestion) -> str:
+        return q.category.value if hasattr(q.category, "value") else str(q.category)
+
+    pinned_texts = {q.question for q in pinned}
+
+    if prev_questions is not None:
+        # 위치 보존 병합
+        prev_by_cat: dict[str, list[InterviewQuestion]] = defaultdict(list)
+        for q in prev_questions:
+            prev_by_cat[_cat(q)].append(q)
+
+        new_by_cat: dict[str, list[InterviewQuestion]] = defaultdict(list)
+        for q in new_questions:
+            new_by_cat[_cat(q)].append(q)
+
+        result: list[InterviewQuestion] = []
+        all_cats = list(prev_by_cat.keys()) + [c for c in new_by_cat if c not in prev_by_cat]
+
+        for cat in all_cats:
+            prev_qs = prev_by_cat[cat]
+            new_iter = iter(new_by_cat[cat])
+            cat_result: list[InterviewQuestion] = []
+
+            # 이전 슬롯 순서대로: pinned면 유지, unpinned면 새 질문으로 교체
+            for q in prev_qs:
+                if q.question in pinned_texts:
+                    cat_result.append(q)
+                else:
+                    replacement = next(new_iter, None)
+                    if replacement:
+                        cat_result.append(replacement)
+
+            # 남은 new_questions를 questions_per_category까지 뒤에 추가
+            for extra in new_iter:
+                if len(cat_result) < questions_per_category:
+                    cat_result.append(extra)
+
+            result.extend(cat_result)
+
+        return result
+
+    # prev_questions 없을 때: pinned 먼저, new 뒤에 (하위 호환)
+    pinned_by_cat: dict[str, list[InterviewQuestion]] = defaultdict(list)
+    for q in pinned:
+        pinned_by_cat[_cat(q)].append(q)
+
+    new_by_cat2: dict[str, list[InterviewQuestion]] = defaultdict(list)
+    for q in new_questions:
+        new_by_cat2[_cat(q)].append(q)
+
+    result2: list[InterviewQuestion] = []
+    all_cats2 = list(pinned_by_cat.keys()) + [c for c in new_by_cat2 if c not in pinned_by_cat]
+
+    for cat in all_cats2:
+        p_qs = pinned_by_cat[cat]
+        n_qs = new_by_cat2[cat]
+        slots = max(questions_per_category, len(p_qs))
+        result2.extend(p_qs + n_qs[: max(0, slots - len(p_qs))])
+
+    return result2
 
 
 def generate_interview_questions(
@@ -249,6 +385,74 @@ def generate_interview_questions(
 
     return InterviewQuestionsOutput(
         questions=questions,
+        sample_answers=sample_answers,
+        weak_areas=weak_areas,
+        excluded_categories=[c.value for c in excluded],
+    )
+
+
+def refine_interview_questions(
+    inp: InterviewQuestionsInput,
+    feedback: RefinementFeedback,
+    prev_questions: list[InterviewQuestion] | None = None,
+    question_notes: dict[str, str] | None = None,
+    provider: LLMProvider | None = None,
+) -> InterviewQuestionsOutput:
+    """피드백 기반 면접 질문 재생성.
+
+    - feedback.pinned_questions: 보존할 질문 (LLM 재생성에서 제외 지시 후 결과에 병합)
+    - feedback.free_text: 전반적 방향 피드백 → 프롬프트에 직접 삽입
+    - feedback.focus_categories: 집중 카테고리 → 해당 카테고리 위주로 생성
+    - question_notes: 질문별 개선 메모 — unpinned 질문에만 반영, feedback에 병합
+    """
+    if provider is None:
+        provider = GeminiProvider()
+
+    # question_notes를 feedback에 병합 (외부에서 직접 feedback.question_notes를 채워도 됨)
+    if question_notes:
+        feedback = feedback.model_copy(update={"question_notes": question_notes})
+
+    inp_for_refinement = (
+        inp.model_copy(update={"categories": feedback.focus_categories})
+        if feedback.focus_categories
+        else inp
+    )
+
+    categories, excluded = _resolve_categories(inp_for_refinement)
+    logger.info(
+        "면접 질문 재생성 시작 — %s / %s | 카테고리: %s | pinned: %d개",
+        inp.jd.company,
+        inp.jd.position,
+        ", ".join(c.value for c in categories),
+        len(feedback.pinned_questions),
+    )
+
+    prompt = _build_prompt(inp_for_refinement, categories, feedback=feedback)
+    raw = provider.generate_json(prompt)
+    logger.info("재생성 응답 수신 완료, 파싱 중...")
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.error("재생성 LLM 응답 JSON 파싱 실패. raw response: %s", raw)
+        raise
+
+    new_questions = [InterviewQuestion(**q) for q in data.get("questions", [])]
+    sample_answers = [SampleAnswer(**a) for a in data.get("sample_answers", [])]
+    weak_areas: list[str] = data.get("weak_areas", [])
+
+    merged = _merge_questions(feedback.pinned_questions, new_questions, inp.questions_per_category, prev_questions=prev_questions)
+
+    logger.info(
+        "재생성 완료 — 병합 질문 %d개 (pinned %d + new %d) / 예시 답변 %d개",
+        len(merged),
+        len(feedback.pinned_questions),
+        len(new_questions),
+        len(sample_answers),
+    )
+
+    return InterviewQuestionsOutput(
+        questions=merged,
         sample_answers=sample_answers,
         weak_areas=weak_areas,
         excluded_categories=[c.value for c in excluded],

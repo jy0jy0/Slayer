@@ -178,6 +178,95 @@ def build_matcher_agent():
     return create_react_agent(model, MATCH_TOOLS, prompt=MATCH_SYSTEM_PROMPT)
 
 
+async def _match_with_gemini(
+    jd: "JDSchema",
+    resume: "ParsedResume",
+    on_event: Optional[Callable] = None,
+) -> "MatchResult":
+    """OpenAI 키 없을 때 Gemini 직접 호출로 매칭 분석."""
+    import json as _json
+    from slayer.llm import GeminiProvider
+
+    provider = GeminiProvider()
+
+    if on_event:
+        on_event(EventType.THINKING, {"message": "Gemini로 키워드 분석 중..."})
+
+    # Step 1: 키워드 분석
+    if on_event:
+        on_event(EventType.TOOL_CALL, {"tool": "analyze_keywords", "icon": "🔑", "label": "Analyzing keyword overlap"})
+    kw_result = provider.generate_json(f"""Analyze keyword overlap between JD and resume.
+
+Return JSON:
+{{"matched_keywords": ["..."], "missing_keywords": ["..."], "coverage_ratio": 0.0, "keyword_analysis": "summary"}}
+
+JD Skills: {_json.dumps(jd.skills, ensure_ascii=False)}
+JD Requirements: {jd.requirements.model_dump_json()}
+Resume Skills: {_json.dumps(resume.skills, ensure_ascii=False)}
+Resume Experiences: {_json.dumps([e.model_dump() for e in resume.experiences], ensure_ascii=False)}""")
+    if on_event:
+        try:
+            kw_data = _json.loads(kw_result)
+            on_event(EventType.TOOL_RESULT, {"tool": "analyze_keywords", "summary": f"Keyword coverage: {kw_data.get('coverage_ratio', 0):.0%}"})
+        except Exception:
+            on_event(EventType.TOOL_RESULT, {"tool": "analyze_keywords", "summary": "Keywords analyzed"})
+
+    # Step 2: 경험 적합도 분석
+    if on_event:
+        on_event(EventType.TOOL_CALL, {"tool": "assess_experience_fit", "icon": "💼", "label": "Assessing experience fit"})
+    exp_result = provider.generate_json(f"""Assess experience alignment between JD and resume.
+
+Return JSON:
+{{"experience_score": 0, "strengths": ["..."], "weaknesses": ["..."], "fit_summary": "summary"}}
+
+JD Requirements: {jd.requirements.model_dump_json()}
+JD Responsibilities: {_json.dumps(jd.responsibilities, ensure_ascii=False)}
+Resume Experiences: {_json.dumps([e.model_dump() for e in resume.experiences], ensure_ascii=False)}""")
+    if on_event:
+        try:
+            exp_data = _json.loads(exp_result)
+            on_event(EventType.TOOL_RESULT, {"tool": "assess_experience_fit", "summary": f"Experience fit: {exp_data.get('experience_score', '?')}/100"})
+        except Exception:
+            on_event(EventType.TOOL_RESULT, {"tool": "assess_experience_fit", "summary": "Experience assessed"})
+
+    # Step 3: 최종 ATS 점수 산정
+    if on_event:
+        on_event(EventType.TOOL_CALL, {"tool": "identify_strategic_gaps", "icon": "🎯", "label": "Identifying strategic gaps"})
+    final_result = provider.generate_json(f"""Synthesize into final ATS matching assessment.
+
+ATS score weights: ats_simulation 0.30, keywords 0.25, experience 0.20, industry_specific 0.15, content 0.05, format 0.03, errors 0.02
+
+Return JSON:
+{{"ats_score": 0, "score_breakdown": {{"ats_simulation": 0, "keywords": 0, "experience": 0, "industry_specific": 0, "content": 0, "format": 0, "errors": 0}}, "matched_keywords": [], "missing_keywords": [], "strengths": [], "weaknesses": [], "gap_summary": "summary"}}
+
+Keyword Analysis: {kw_result}
+Experience Analysis: {exp_result}""")
+    if on_event:
+        try:
+            fd = _json.loads(final_result)
+            on_event(EventType.TOOL_RESULT, {"tool": "identify_strategic_gaps", "summary": f"ATS score: {fd.get('ats_score', '?')}/100"})
+        except Exception:
+            on_event(EventType.TOOL_RESULT, {"tool": "identify_strategic_gaps", "summary": "Gaps identified"})
+
+    if on_event:
+        on_event(EventType.DONE, {"message": "Match analysis complete"})
+
+    try:
+        data = _json.loads(final_result)
+        return MatchResult(
+            ats_score=float(data.get("ats_score", 0)),
+            score_breakdown=data.get("score_breakdown", {}),
+            matched_keywords=data.get("matched_keywords", []),
+            missing_keywords=data.get("missing_keywords", []),
+            strengths=data.get("strengths", []),
+            weaknesses=data.get("weaknesses", []),
+            gap_summary=data.get("gap_summary", ""),
+        )
+    except (json.JSONDecodeError, ValueError, KeyError) as e:
+        logger.error("Gemini 매처 응답 파싱 실패: %s", e)
+        return MatchResult(ats_score=0.0, gap_summary=f"Parse error: {e}")
+
+
 # ═══════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════
@@ -197,14 +286,13 @@ async def match_jd_resume(
 ) -> MatchResult:
     """Match a JD against a resume and return a MatchResult.
 
-    Args:
-        jd: Parsed job description
-        resume: Parsed resume
-        on_event: Optional callback for streaming UI events
-
-    Returns:
-        MatchResult with ATS score and detailed analysis.
+    OpenAI 키가 있으면 LangGraph ReAct 에이전트, 없으면 Gemini 직접 호출.
     """
+    from slayer.config import OPENAI_API_KEY as _OPENAI_KEY
+    if not _OPENAI_KEY:
+        logger.info("OPENAI_API_KEY 없음 — Gemini 직접 호출로 매칭 실행")
+        return await _match_with_gemini(jd, resume, on_event)
+
     logger.info("JD-Resume matcher agent started (streaming)")
     agent = build_matcher_agent()
 
