@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from slayer.config import GOOGLE_API_KEY, OPENAI_API_KEY
+from slayer.config import GOOGLE_API_KEY, OPENAI_API_KEY, OPENAI_MODEL
 
 
 @runtime_checkable
@@ -45,7 +45,7 @@ class GeminiProvider:
 class OpenAIProvider:
     """OpenAI 기반 LLM Provider."""
 
-    def __init__(self, model: str = "gpt-4o-mini", api_key: str = OPENAI_API_KEY) -> None:
+    def __init__(self, model: str = OPENAI_MODEL, api_key: str = OPENAI_API_KEY) -> None:
         from openai import OpenAI
 
         self._model = model

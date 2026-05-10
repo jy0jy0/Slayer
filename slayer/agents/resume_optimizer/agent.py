@@ -69,7 +69,7 @@ TOOLS = [evaluate_ats, optimize_blocks, analyze_optimization_impact]
 
 def build_resume_optimizer_agent(target_score: float = 80, max_iterations: int = 3):
     """Build the ReAct agent graph."""
-    model = get_chat_model("gpt-4o-mini")
+    model = get_chat_model()
     prompt = SYSTEM_PROMPT.format(target_score=target_score, max_iterations=max_iterations)
     return create_react_agent(model, TOOLS, prompt=prompt)
 

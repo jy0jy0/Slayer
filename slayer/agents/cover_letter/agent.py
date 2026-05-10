@@ -61,7 +61,7 @@ TOOLS = [generate_draft, review_and_refine, compute_stats, evaluate_draft_qualit
 
 def build_cover_letter_agent():
     """Build the ReAct agent graph."""
-    model = get_chat_model("gpt-4o-mini")
+    model = get_chat_model()
     return create_react_agent(model, TOOLS, prompt=SYSTEM_PROMPT)
 
 

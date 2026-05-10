@@ -2,7 +2,7 @@
 
 우선순위 결정 (SLAYER_PARSER_LLM 환경변수):
   SLAYER_PARSER_LLM=gemini  → Gemini 2.5 Flash 고정
-  SLAYER_PARSER_LLM=openai  → GPT-4o-mini 고정
+  SLAYER_PARSER_LLM=openai  → configured OpenAI model 고정
   미설정                    → API 키 자동 감지 (GOOGLE_API_KEY 있으면 Gemini, 없으면 OpenAI)
 
 사용 예시:
@@ -22,12 +22,12 @@ from typing import Any, Type, TypeVar
 
 from pydantic import BaseModel
 
-from slayer.config import GOOGLE_API_KEY, OPENAI_API_KEY
+from slayer.config import GOOGLE_API_KEY, OPENAI_API_KEY, OPENAI_MODEL
 
 logger = logging.getLogger(__name__)
 
 _GEMINI_MODEL = "gemini-2.5-flash"
-_OPENAI_MODEL = "gpt-4o-mini"
+_OPENAI_MODEL = OPENAI_MODEL
 
 T = TypeVar("T", bound=BaseModel)
 

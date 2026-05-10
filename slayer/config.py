@@ -15,7 +15,7 @@ load_dotenv()
 
 # ── OpenAI ────────────────────────────────────────────────
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-OPENAI_MODEL = "gpt-4o-mini"
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL") or os.environ.get("SLAYER_LLM_MODEL", "gpt-4o-mini")
 
 # ── Google (Gemini + OAuth) ───────────────────────────────
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")

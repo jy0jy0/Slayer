@@ -28,13 +28,13 @@ from openai import (
     RateLimitError,
 )
 
-from slayer.config import GOOGLE_API_KEY, OPENAI_API_KEY
+from slayer.config import GOOGLE_API_KEY, OPENAI_API_KEY, OPENAI_MODEL
 
 logger = logging.getLogger(__name__)
 
 # config.py declares provider defaults, but we allow environment override here
 # so jobs can switch models without touching source.
-LLM_MODEL = os.environ.get("SLAYER_LLM_MODEL", "gpt-4o-mini")
+LLM_MODEL = os.environ.get("SLAYER_LLM_MODEL") or OPENAI_MODEL
 GEMINI_MODEL = os.environ.get("SLAYER_GEMINI_MODEL", "gemini-2.5-flash")
 
 
@@ -241,14 +241,15 @@ def get_default_provider() -> OpenAIProvider | GeminiProvider:
     raise ValueError("OPENAI_API_KEY 또는 GOOGLE_API_KEY 중 하나는 설정해야 합니다.")
 
 
-def get_chat_model(model: str = "gpt-4o-mini"):
+def get_chat_model(model: str | None = None):
     """LangGraph create_react_agent 용 Chat 모델.
 
     OpenAI 키 있으면 ChatOpenAI, 없으면 ChatGoogleGenerativeAI로 자동 fallback.
     """
+    model_name = model or LLM_MODEL
     if _has_openai_key():
         from langchain_openai import ChatOpenAI
-        return ChatOpenAI(model=model, api_key=OPENAI_API_KEY, max_retries=3)
+        return ChatOpenAI(model=model_name, api_key=OPENAI_API_KEY, max_retries=3)
 
     if GOOGLE_API_KEY:
         from langchain_google_genai import ChatGoogleGenerativeAI

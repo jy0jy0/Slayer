@@ -11,6 +11,7 @@ from typing import Any, Callable, Optional
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 
+from slayer.config import OPENAI_API_KEY
 from slayer.llm import get_chat_model, get_default_provider, parse_agent_json
 from slayer.schemas import JDSchema, MatchResult, ParsedResume
 from slayer.ui.events import EventType
@@ -174,7 +175,7 @@ Return JSON:
 
 def build_matcher_agent():
     """Build the ReAct agent graph for JD-resume matching."""
-    model = get_chat_model("gpt-4o-mini")
+    model = get_chat_model()
     return create_react_agent(model, MATCH_TOOLS, prompt=MATCH_SYSTEM_PROMPT)
 
 
@@ -182,6 +183,107 @@ def build_matcher_agent():
 # Helpers
 # ═══════════════════════════════════════════════════
 
+
+def _has_openai_key() -> bool:
+    return bool(OPENAI_API_KEY and not OPENAI_API_KEY.startswith("your-"))
+
+
+def _json_or_empty(raw: str) -> dict[str, Any]:
+    try:
+        return json.loads(parse_agent_json(raw))
+    except (json.JSONDecodeError, ValueError, TypeError):
+        logger.warning("Failed to parse matcher helper JSON: %s", raw[:300])
+        return {}
+
+
+async def _match_jd_resume_direct(
+    jd: JDSchema,
+    resume: ParsedResume,
+    on_event: Optional[Callable[[EventType, dict[str, Any]], None]] = None,
+) -> MatchResult:
+    """Run matching without LangChain chat model when only Gemini API is configured.
+
+    The LangChain Google chat adapter can fail with project-level 403s even when
+    the direct google-genai SDK call succeeds. The Streamlit MVP needs a stable
+    path, so Gemini-only setups use the same analysis steps directly.
+    """
+    provider = get_default_provider()
+
+    skills_json = json.dumps(jd.skills, ensure_ascii=False)
+    requirements_json = jd.requirements.model_dump_json(indent=2)
+    responsibilities_json = json.dumps(jd.responsibilities, ensure_ascii=False, indent=2)
+    experiences_json = json.dumps(
+        [e.model_dump() for e in resume.experiences], ensure_ascii=False, indent=2
+    )
+    resume_skills_json = json.dumps(resume.skills, ensure_ascii=False)
+
+    if on_event:
+        on_event(EventType.TOOL_CALL, {"tool": "analyze_keywords", "icon": "🔑", "label": "Analyzing keyword overlap"})
+    keyword_raw = provider.generate_json(
+        f"""Analyze keyword overlap between this JD and resume.
+
+Return JSON:
+{{"matched_keywords": ["..."], "missing_keywords": ["..."], "coverage_ratio": 0.0-1.0, "keyword_analysis": "2-3 sentence summary"}}
+
+## JD Skills: {skills_json}
+## JD Requirements: {requirements_json}
+## Resume Skills: {resume_skills_json}
+## Resume Experiences: {experiences_json}""",
+        system_message="ATS keyword analyst. JSON only.",
+    )
+    keyword_data = _json_or_empty(keyword_raw)
+    if on_event:
+        ratio = keyword_data.get("coverage_ratio", 0)
+        on_event(EventType.TOOL_RESULT, {"tool": "analyze_keywords", "summary": f"Keyword coverage: {ratio:.0%}"})
+
+    if on_event:
+        on_event(EventType.TOOL_CALL, {"tool": "assess_experience_fit", "icon": "💼", "label": "Assessing experience fit"})
+    experience_raw = provider.generate_json(
+        f"""Assess experience alignment between JD and resume.
+
+Use both requirements and responsibilities to evaluate fit.
+
+Return JSON:
+{{"experience_score": 0-100, "strengths": ["3-5 strengths"], "weaknesses": ["3-5 weaknesses"], "fit_summary": "2-3 sentence summary"}}
+
+## JD Requirements: {requirements_json}
+## JD Responsibilities: {responsibilities_json}
+## Resume Experiences: {experiences_json}""",
+        system_message="Experience fit assessor. JSON only.",
+    )
+    experience_data = _json_or_empty(experience_raw)
+    if on_event:
+        score = experience_data.get("experience_score", "?")
+        on_event(EventType.TOOL_RESULT, {"tool": "assess_experience_fit", "summary": f"Experience fit: {score}/100"})
+
+    if on_event:
+        on_event(EventType.TOOL_CALL, {"tool": "identify_strategic_gaps", "icon": "🎯", "label": "Identifying strategic gaps"})
+    final_raw = provider.generate_json(
+        f"""Synthesize these analyses into a final ATS matching assessment.
+
+Return JSON:
+{{"ats_score": 0-100, "score_breakdown": {{"ats_simulation": 0, "keywords": 0, "experience": 0, "industry_specific": 0, "content": 0, "format": 0, "errors": 0}}, "gap_summary": "종합 갭 분석 (2-3문장)", "strategic_recommendations": ["1-3 strategic suggestions"]}}
+
+## Keyword Analysis: {json.dumps(keyword_data, ensure_ascii=False)}
+## Experience Analysis: {json.dumps(experience_data, ensure_ascii=False)}
+## JD: {jd.model_dump_json(indent=2)}
+## Resume: {resume.model_dump_json(indent=2)}""",
+        system_message="ATS 전문가. JSON only.",
+    )
+    final_data = _json_or_empty(final_raw)
+    if on_event:
+        on_event(EventType.TOOL_RESULT, {"tool": "identify_strategic_gaps", "summary": f"ATS score: {final_data.get('ats_score', '?')}/100"})
+        on_event(EventType.DONE, {"message": "Matching complete"})
+
+    return MatchResult(
+        ats_score=float(final_data.get("ats_score", 0) or 0),
+        score_breakdown=final_data.get("score_breakdown") or {},
+        matched_keywords=keyword_data.get("matched_keywords") or [],
+        missing_keywords=keyword_data.get("missing_keywords") or [],
+        strengths=experience_data.get("strengths") or [],
+        weaknesses=experience_data.get("weaknesses") or [],
+        gap_summary=final_data.get("gap_summary") or experience_data.get("fit_summary") or "",
+    )
 
 
 
@@ -206,6 +308,10 @@ async def match_jd_resume(
         MatchResult with ATS score and detailed analysis.
     """
     logger.info("JD-Resume matcher agent started (streaming)")
+    if not _has_openai_key():
+        logger.info("OPENAI_API_KEY 없음 — direct Gemini matcher path 사용")
+        return await _match_jd_resume_direct(jd, resume, on_event=on_event)
+
     agent = build_matcher_agent()
 
     jd_json = jd.model_dump_json(indent=2)

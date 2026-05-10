@@ -69,7 +69,7 @@ TOOLS = [search_news, get_corp_info, get_financial_info, validate_research_data]
 
 def build_company_research_agent():
     """Build the ReAct agent graph."""
-    model = get_chat_model("gpt-4o-mini")
+    model = get_chat_model()
     return create_react_agent(model, TOOLS, prompt=SYSTEM_PROMPT)
 
 
