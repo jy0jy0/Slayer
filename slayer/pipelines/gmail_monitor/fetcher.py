@@ -490,23 +490,26 @@ def _handle_pass_or_interview(user_id: str, result: GmailParseResult, event_data
 
     try:
         with get_session() as session:
+            from slayer.db.models import GmailEvent
+
             company = _get_or_create_company(session, result.company)
             app, created = _get_or_create_application(
                 session, user_id, company, initial_status="applied"
             )
+            event_data["application_id"] = str(app.id)
+            if event_data.get("event_id"):
+                event = session.query(GmailEvent).filter_by(id=uuid.UUID(event_data["event_id"])).first()
+                if event:
+                    event.application_id = app.id
 
             # 이미 최종 단계이면 전이 불필요
             if app.status in ("in_progress", "final_pass"):
-                event_data["application_id"] = str(app.id)
-                _link_event_to_application(event_data, app.id)
                 if result.status_type == GmailStatusType.INTERVIEW and result.interview_details:
                     _create_interview_event(user_id, result, event_data)
                 return
 
             prev_status = app.status
             app.status = "in_progress"
-            event_data["application_id"] = str(app.id)
-            _link_event_to_application(event_data, app.id)
 
             if created:
                 # 신규 생성: applied → in_progress 두 이력 기록
@@ -554,12 +557,17 @@ def _handle_rejection(user_id: str, result: GmailParseResult, event_data: dict) 
 
     try:
         with get_session() as session:
+            from slayer.db.models import GmailEvent
+
             company = _get_or_create_company(session, result.company)
             app, created = _get_or_create_application(
                 session, user_id, company, initial_status="applied"
             )
             event_data["application_id"] = str(app.id)
-            _link_event_to_application(event_data, app.id)
+            if event_data.get("event_id"):
+                event = session.query(GmailEvent).filter_by(id=uuid.UUID(event_data["event_id"])).first()
+                if event:
+                    event.application_id = app.id
 
             if app.status in ("rejected", "withdrawn", "final_pass"):
                 return
