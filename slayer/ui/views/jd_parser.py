@@ -73,6 +73,7 @@ def render():
             cached = get_cached_job_posting(
                 jd_url,
                 position=job_title_input if job_title_input else None,
+                user_id=st.session_state.get("user_id"),
             )
             if cached and cached.parsed_data:
                 jd_schema = JDSchema(**cached.parsed_data)
@@ -140,7 +141,11 @@ def render():
 
                 try:
                     from slayer.db.repository import save_job_posting
-                    job_posting_id = save_job_posting(jd_schema, source_url=jd_url)
+                    job_posting_id = save_job_posting(
+                        jd_schema,
+                        source_url=jd_url,
+                        user_id=st.session_state.get("user_id"),
+                    )
                     if job_posting_id:
                         st.session_state["job_posting_id"] = str(job_posting_id)
                     status.write("✅ **[4/4] 저장 완료** — 파일 + DB")

@@ -81,7 +81,11 @@ async def parse_jd(req: JDParseRequest):
         )
         if inspect.isawaitable(result):
             result = await result
-        job_posting_id = repository.save_job_posting(result, source_url=req.url.strip())
+        job_posting_id = repository.save_job_posting(
+            result,
+            source_url=req.url.strip(),
+            user_id=req.user_id,
+        )
         data = result.model_dump()
         data["job_posting_id"] = str(job_posting_id) if job_posting_id else None
         return data

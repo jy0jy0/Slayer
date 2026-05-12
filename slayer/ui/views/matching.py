@@ -111,7 +111,11 @@ def _render_jd_input() -> None:
                     st.session_state["jd_source"] = "url"
                     try:
                         from slayer.db.repository import save_job_posting
-                        job_posting_id = save_job_posting(jd_schema, source_url=jd_url)
+                        job_posting_id = save_job_posting(
+                            jd_schema,
+                            source_url=jd_url,
+                            user_id=st.session_state.get("user_id"),
+                        )
                         if job_posting_id:
                             st.session_state["job_posting_id"] = str(job_posting_id)
                     except Exception:
@@ -126,21 +130,38 @@ def _render_jd_input() -> None:
                     st.session_state.pop("jd_source", None)
 
     with jd_tabs[1]:
+        include_shared = st.checkbox(
+            "공용 JD도 함께 보기",
+            value=False,
+            key="include_shared_jds",
+            help="사용자 정보가 없는 기존 JD 캐시를 함께 표시합니다.",
+        )
         try:
             from slayer.db.repository import list_recent_job_postings
-            postings = list_recent_job_postings() or []
+            postings = list_recent_job_postings(
+                user_id=st.session_state.get("user_id"),
+                include_shared=include_shared,
+            ) or []
         except Exception as e:
             postings = []
             st.warning(f"Failed to load saved JDs: {e}")
 
         if not postings:
-            st.caption("No saved job descriptions yet.")
+            st.caption(
+                "No saved job descriptions for your account yet."
+                if not include_shared
+                else "No saved or shared job descriptions yet."
+            )
             return
 
         selected_jd = st.selectbox(
-            "Shared job descriptions",
+            "Saved job descriptions",
             postings,
-            format_func=lambda jd: f"{jd['company']} — {jd['title']} | {_option_date(jd.get('created_at', ''))}",
+            format_func=lambda jd: (
+                f"{jd['company']} — {jd['title']} "
+                f"| {'공용' if not jd.get('user_id') else '내 JD'} "
+                f"| {_option_date(jd.get('created_at', ''))}"
+            ),
             key="saved_jd_select",
         )
         if st.button("Load JD from DB", key="load_saved_jd", use_container_width=True):

@@ -121,6 +121,7 @@ class JobPosting(Base):
     __tablename__ = "job_postings"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), index=True)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), index=True)
     source_url = Column(Text)
     platform = Column(String(50))                           # wanted | jobkorea | saramin | other

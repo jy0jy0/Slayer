@@ -126,7 +126,11 @@ def save_agent_log(
 
 
 @_safe_db_op
-def save_job_posting(jd_schema, source_url: str = "") -> uuid.UUID | None:
+def save_job_posting(
+    jd_schema,
+    source_url: str = "",
+    user_id: str | None = None,
+) -> uuid.UUID | None:
     """JD 파싱 결과를 job_postings 테이블에 저장. UUID 반환."""
     from datetime import date as _date
     from slayer.db.models import JobPosting
@@ -148,6 +152,7 @@ def save_job_posting(jd_schema, source_url: str = "") -> uuid.UUID | None:
     with get_session() as session:
         job = JobPosting(
             id=job_id,
+            user_id=uuid.UUID(user_id) if user_id else None,
             company_id=company_id,
             source_url=normalized_url,
             platform=getattr(jd_schema, "platform", None),
@@ -228,7 +233,11 @@ def save_match_result(
 
 
 @_safe_db_op
-def get_cached_job_posting(url: str, position: str | None = None) -> Any:
+def get_cached_job_posting(
+    url: str,
+    position: str | None = None,
+    user_id: str | None = None,
+) -> Any:
     """URL(+ 선택적 직무명)으로 캐시된 JobPosting 조회.
 
     캐시 유효 조건:
@@ -254,6 +263,8 @@ def get_cached_job_posting(url: str, position: str | None = None) -> Any:
         )
         if position:
             query = query.filter(JobPosting.position == position)
+        if user_id:
+            query = query.filter(JobPosting.user_id == uuid.UUID(user_id))
         posting = query.order_by(JobPosting.created_at.desc()).first()
         if not posting:
             return None
@@ -363,22 +374,37 @@ def save_parsed_resume(
 
 
 @_safe_db_op
-def list_recent_job_postings(limit: int = 50) -> list[dict]:
-    """최근 저장된 JD 목록을 UI 선택용 dict로 반환."""
+def list_recent_job_postings(
+    limit: int = 50,
+    user_id: str | None = None,
+    include_shared: bool = False,
+) -> list[dict]:
+    """최근 저장된 JD 목록을 UI 선택용 dict로 반환.
+
+    user_id가 있으면 해당 사용자가 저장한 JD만 조회한다.
+    include_shared=True인 경우 user_id가 없는 legacy/shared JD도 함께 보여준다.
+    """
     from slayer.db.models import Company, JobPosting
+    from sqlalchemy import or_
 
     with get_session() as session:
-        rows = (
+        query = (
             session.query(JobPosting, Company.name)
             .outerjoin(Company, JobPosting.company_id == Company.id)
             .filter(JobPosting.parsed_data.isnot(None))
-            .order_by(JobPosting.created_at.desc())
-            .limit(limit)
-            .all()
         )
+        if user_id:
+            user_uuid = uuid.UUID(user_id)
+            if include_shared:
+                query = query.filter(or_(JobPosting.user_id == user_uuid, JobPosting.user_id.is_(None)))
+            else:
+                query = query.filter(JobPosting.user_id == user_uuid)
+
+        rows = query.order_by(JobPosting.created_at.desc()).limit(limit).all()
         return [
             {
                 "id": str(job.id),
+                "user_id": str(job.user_id) if job.user_id else "",
                 "company": company_name or (job.parsed_data or {}).get("company") or "?",
                 "title": job.title or (job.parsed_data or {}).get("title") or "?",
                 "position": job.position or "",
